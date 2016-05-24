@@ -12,4 +12,4 @@ Books
 Videos
 =====
 
-* `Learning Akka <https://www.packtpub.com/application-development/learning-akka-video?utm_source=github&utm_medium=repository&utm_campaign=9781784391836>`_, by Salma Khater, PACKT Publishing, ISBN: 9781784391836, January 2016
+* `Learning Akka <https://www.packtpub.com/application-development/learning-akka-video>`_, by Salma Khater, PACKT Publishing, ISBN: 9781784391836, January 2016
