@@ -4,7 +4,6 @@
 
 package akka.http.javadsl.server
 
-import akka.http.javadsl.marshalling.Marshaller
 import akka.http.javadsl.model.HttpRequest
 import akka.http.scaladsl.util.FastFuture._
 import scala.concurrent.ExecutionContextExecutor

@@ -17,7 +17,6 @@ import akka.http.javadsl.HttpsConnectionContext;
 import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.HttpResponse;
 import akka.http.javadsl.server.*;
-import akka.http.javadsl.unmarshalling.StringUnmarshallers;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
 
@@ -35,7 +34,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static akka.http.javadsl.server.PathMatchers.integerSegment;
-import static akka.http.javadsl.unmarshalling.Unmarshaller.entityToString;
+import static akka.http.javadsl.server.Unmarshaller.entityToString;
 
 public class SimpleServerApp extends AllDirectives { // or import Directives.*
 

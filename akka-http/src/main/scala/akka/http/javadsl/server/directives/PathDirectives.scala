@@ -7,8 +7,6 @@ import java.util.function.BiFunction
 import java.util.function.{ Function ⇒ JFunction }
 import java.util.function.Supplier
 
-import akka.http.javadsl.unmarshalling.Unmarshaller
-
 import scala.util.Failure
 import scala.util.Success
 
@@ -17,6 +15,7 @@ import akka.http.javadsl.server.PathMatcher0
 import akka.http.javadsl.server.PathMatcher1
 import akka.http.javadsl.server.PathMatcher2
 import akka.http.javadsl.server.Route
+import akka.http.javadsl.server.Unmarshaller
 import akka.http.scaladsl.model.StatusCodes.Redirection
 import akka.http.scaladsl.server.{ Directives ⇒ D }
 
