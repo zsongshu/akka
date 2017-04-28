@@ -141,6 +141,24 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
     }).run()
   }
 
+  @deprecated
+  def outgoingConnection(
+    remoteAddress:  InetSocketAddress,
+    localAddress:   Option[InetSocketAddress],
+    options:        immutable.Traversable[SocketOption],
+    halfClose:      Boolean,
+    connectTimeout: Duration,
+    idleTimeout:    Duration): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
+    outgoingConnection(
+      remoteAddress,
+      localAddress,
+      options,
+      halfClose,
+      connectTimeout,
+      idleTimeout,
+      keepOpenOnPeerClosed = false
+    )
+
   /**
    * Creates an [[Tcp.OutgoingConnection]] instance representing a prospective TCP client connection to the given endpoint.
    *
@@ -158,12 +176,13 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
    *                  independently whether the server is still attempting to write.
    */
   def outgoingConnection(
-    remoteAddress:  InetSocketAddress,
-    localAddress:   Option[InetSocketAddress]           = None,
-    options:        immutable.Traversable[SocketOption] = Nil,
-    halfClose:      Boolean                             = true,
-    connectTimeout: Duration                            = Duration.Inf,
-    idleTimeout:    Duration                            = Duration.Inf): Flow[ByteString, ByteString, Future[OutgoingConnection]] = {
+    remoteAddress:        InetSocketAddress,
+    localAddress:         Option[InetSocketAddress]           = None,
+    options:              immutable.Traversable[SocketOption] = Nil,
+    halfClose:            Boolean                             = true,
+    connectTimeout:       Duration                            = Duration.Inf,
+    idleTimeout:          Duration                            = Duration.Inf,
+    keepOpenOnPeerClosed: Boolean                             = true): Flow[ByteString, ByteString, Future[OutgoingConnection]] = {
 
     val tcpFlow = Flow.fromGraph(new OutgoingConnectionStage(
       IO(IoTcp)(system),
@@ -171,6 +190,7 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
       localAddress,
       options,
       halfClose,
+      keepOpenOnPeerClosed,
       connectTimeout)).via(detacher[ByteString]) // must read ahead for proper completions
 
     idleTimeout match {
