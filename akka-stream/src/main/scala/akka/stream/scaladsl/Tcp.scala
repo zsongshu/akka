@@ -193,8 +193,8 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
       localAddress,
       options,
       halfClose,
-      keepOpenOnPeerClosed,
-      connectTimeout)).via(detacher[ByteString]) // must read ahead for proper completions
+      connectTimeout,
+      keepOpenOnPeerClosed)).via(detacher[ByteString]) // must read ahead for proper completions
 
     idleTimeout match {
       case d: FiniteDuration ⇒ tcpFlow.join(TcpIdleTimeout(d, Some(remoteAddress)))

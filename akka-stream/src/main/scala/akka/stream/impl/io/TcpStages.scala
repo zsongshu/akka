@@ -344,8 +344,8 @@ private[stream] object ConnectionSourceStage {
   localAddress:         Option[InetSocketAddress]           = None,
   options:              immutable.Traversable[SocketOption] = Nil,
   halfClose:            Boolean                             = true,
-  keepOpenOnPeerClosed: Boolean                             = false,
-  connectTimeout:       Duration                            = Duration.Inf)
+  connectTimeout:       Duration                            = Duration.Inf,
+  keepOpenOnPeerClosed: Boolean                             = false)
 
   extends GraphStageWithMaterializedValue[FlowShape[ByteString, ByteString], Future[StreamTcp.OutgoingConnection]] {
   import TcpConnectionStage._
