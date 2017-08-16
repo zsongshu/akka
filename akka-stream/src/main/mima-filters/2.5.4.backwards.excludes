@@ -1,0 +1,3 @@
+# #22163 Expose keepOpenOnPeerClosed for outgoing TCP streams
+# https://github.com/typesafehub/migration-manager/issues/160 would be so nice :)
+ProblemFilters.exclude[Problem]("akka.stream.impl.io.*")
