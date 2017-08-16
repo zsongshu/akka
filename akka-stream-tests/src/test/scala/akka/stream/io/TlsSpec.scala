@@ -151,7 +151,7 @@ class TlsSpec extends StreamSpec("akka.loglevel=DEBUG\nakka.actor.debug.receive=
       def decorateFlow(leftClosing: TLSClosing, rightClosing: TLSClosing,
                        rhs: Flow[SslTlsInbound, SslTlsOutbound, Any]) = {
         binding = server(serverTls(rightClosing).reversed join rhs)
-        clientTls(leftClosing) join Tcp().outgoingConnection(binding.localAddress)
+        clientTls(leftClosing) join Tcp().connect(binding.localAddress)
       }
       override def cleanup(): Unit = binding.unbind()
     }
@@ -161,7 +161,7 @@ class TlsSpec extends StreamSpec("akka.loglevel=DEBUG\nakka.actor.debug.receive=
       def decorateFlow(leftClosing: TLSClosing, rightClosing: TLSClosing,
                        rhs: Flow[SslTlsInbound, SslTlsOutbound, Any]) = {
         binding = server(clientTls(rightClosing).reversed join rhs)
-        serverTls(leftClosing) join Tcp().outgoingConnection(binding.localAddress)
+        serverTls(leftClosing) join Tcp().connect(binding.localAddress)
       }
       override def cleanup(): Unit = binding.unbind()
     }
@@ -402,7 +402,7 @@ class TlsSpec extends StreamSpec("akka.loglevel=DEBUG\nakka.actor.debug.receive=
         .toMat(Sink.head)(Keep.both).run()
 
       val clientErr = simple.join(badClientTls(IgnoreBoth))
-        .join(Tcp().outgoingConnection(Await.result(server, 1.second).localAddress)).run()
+        .join(Tcp().connect(Await.result(server, 1.second).localAddress)).run()
 
       Await.result(serverErr, 1.second).getMessage should include("certificate_unknown")
       Await.result(clientErr, 1.second).getMessage should equal("General SSLEngine problem")

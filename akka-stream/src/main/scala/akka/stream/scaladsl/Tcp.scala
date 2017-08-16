@@ -141,22 +141,22 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
     }).run()
   }
 
-  @deprecated
+  @deprecated(message = "use 'connect' instead", since = "2.5.4")
   def outgoingConnection(
     remoteAddress:  InetSocketAddress,
-    localAddress:   Option[InetSocketAddress],
-    options:        immutable.Traversable[SocketOption],
-    halfClose:      Boolean,
-    connectTimeout: Duration,
-    idleTimeout:    Duration): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
-    outgoingConnection(
+    localAddress:   Option[InetSocketAddress]           = None,
+    options:        immutable.Traversable[SocketOption] = Nil,
+    halfClose:      Boolean                             = true,
+    connectTimeout: Duration                            = Duration.Inf,
+    idleTimeout:    Duration                            = Duration.Inf): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
+    connect(
       remoteAddress,
       localAddress,
       options,
       halfClose,
       connectTimeout,
       idleTimeout,
-      keepOpenOnPeerClosed = false
+      keepOpenOnPeerClosed = true
     )
 
   /**
@@ -174,15 +174,18 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
    *                  therefore it is the default setting.
    *                  If set to false, the connection will immediately closed once the client closes its write side,
    *                  independently whether the server is still attempting to write.
+   * @param keepOpenOnPeerClosed
+   *                  When the remote side has closed the incoming side of the connection, keep the outgoing side
+   *                  open to keep sending data until finished.
    */
-  def outgoingConnection(
+  def connect(
     remoteAddress:        InetSocketAddress,
-    localAddress:         Option[InetSocketAddress]           = None,
-    options:              immutable.Traversable[SocketOption] = Nil,
-    halfClose:            Boolean                             = true,
-    connectTimeout:       Duration                            = Duration.Inf,
-    idleTimeout:          Duration                            = Duration.Inf,
-    keepOpenOnPeerClosed: Boolean                             = true): Flow[ByteString, ByteString, Future[OutgoingConnection]] = {
+    localAddress:         Option[InetSocketAddress],
+    options:              immutable.Traversable[SocketOption],
+    halfClose:            Boolean,
+    connectTimeout:       Duration,
+    idleTimeout:          Duration,
+    keepOpenOnPeerClosed: Boolean): Flow[ByteString, ByteString, Future[OutgoingConnection]] = {
 
     val tcpFlow = Flow.fromGraph(new OutgoingConnectionStage(
       IO(IoTcp)(system),
@@ -204,8 +207,23 @@ final class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
    * Creates an [[Tcp.OutgoingConnection]] without specifying options.
    * It represents a prospective TCP client connection to the given endpoint.
    */
+  @deprecated("use 'connect'", since = "2.5.4")
   def outgoingConnection(host: String, port: Int): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
-    outgoingConnection(InetSocketAddress.createUnresolved(host, port))
+    connect(host, port)
+
+  /**
+   * Creates an [[Tcp.OutgoingConnection]] without specifying options.
+   * It represents a prospective TCP client connection to the given endpoint.
+   */
+  def connect(address: InetSocketAddress): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
+    connect(address, localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = false)
+
+  /**
+   * Creates an [[Tcp.OutgoingConnection]] without specifying options.
+   * It represents a prospective TCP client connection to the given endpoint.
+   */
+  def connect(host: String, port: Int): Flow[ByteString, ByteString, Future[OutgoingConnection]] =
+    connect(InetSocketAddress.createUnresolved(host, port))
 }
 
 final class TcpIdleTimeoutException(msg: String, timeout: Duration)

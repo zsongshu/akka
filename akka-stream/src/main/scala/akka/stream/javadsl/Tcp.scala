@@ -144,6 +144,17 @@ class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
       .map(new IncomingConnection(_))
       .mapMaterializedValue(_.map(new ServerBinding(_))(ec).toJava))
 
+  @Deprecated
+  def outgoingConnection(
+    remoteAddress:  InetSocketAddress,
+    localAddress:   Optional[InetSocketAddress],
+    options:        JIterable[SocketOption],
+    halfClose:      Boolean,
+    connectTimeout: Duration,
+    idleTimeout:    Duration): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
+    Flow.fromGraph(delegate.connect(remoteAddress, localAddress.asScala, immutableSeq(options), halfClose, connectTimeout, idleTimeout, keepOpenOnPeerClosed = true)
+      .mapMaterializedValue(_.map(new OutgoingConnection(_))(ec).toJava))
+
   /**
    * Creates an [[Tcp.OutgoingConnection]] instance representing a prospective TCP client connection to the given endpoint.
    *
@@ -159,23 +170,32 @@ class Tcp(system: ExtendedActorSystem) extends akka.actor.Extension {
    *                  therefore it is the default setting.
    *                  If set to false, the connection will immediately closed once the client closes its write side,
    *                  independently whether the server is still attempting to write.
+   * @param keepOpenOnPeerClosed
+   *                  When the remote side has closed the incoming side of the connection, keep the outgoing side
+   *                  open to keep sending data until finished.
    */
-  def outgoingConnection(
-    remoteAddress:  InetSocketAddress,
-    localAddress:   Optional[InetSocketAddress],
-    options:        JIterable[SocketOption],
-    halfClose:      Boolean,
-    connectTimeout: Duration,
-    idleTimeout:    Duration): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
-    Flow.fromGraph(delegate.outgoingConnection(remoteAddress, localAddress.asScala, immutableSeq(options), halfClose, connectTimeout, idleTimeout)
+  def connect(
+    remoteAddress:        InetSocketAddress,
+    localAddress:         Optional[InetSocketAddress],
+    options:              JIterable[SocketOption],
+    halfClose:            Boolean,
+    connectTimeout:       Duration,
+    idleTimeout:          Duration,
+    keepOpenOnPeerClosed: Boolean): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
+    Flow.fromGraph(delegate.connect(remoteAddress, localAddress.asScala, immutableSeq(options), halfClose, connectTimeout, idleTimeout, keepOpenOnPeerClosed)
+      .mapMaterializedValue(_.map(new OutgoingConnection(_))(ec).toJava))
+
+  @Deprecated
+  def outgoingConnection(host: String, port: Int): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
+    Flow.fromGraph(delegate.connect(host, port)
       .mapMaterializedValue(_.map(new OutgoingConnection(_))(ec).toJava))
 
   /**
    * Creates an [[Tcp.OutgoingConnection]] without specifying options.
    * It represents a prospective TCP client connection to the given endpoint.
    */
-  def outgoingConnection(host: String, port: Int): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
-    Flow.fromGraph(delegate.outgoingConnection(new InetSocketAddress(host, port))
+  def connect(host: String, port: Int): Flow[ByteString, ByteString, CompletionStage[OutgoingConnection]] =
+    Flow.fromGraph(delegate.connect(host, port)
       .mapMaterializedValue(_.map(new OutgoingConnection(_))(ec).toJava))
 
 }

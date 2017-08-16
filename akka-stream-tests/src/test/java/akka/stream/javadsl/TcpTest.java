@@ -67,7 +67,7 @@ public class TcpTest extends StreamTest {
 
     final CompletionStage<ByteString> resultFuture = Source
         .from(testInput)
-        .via(Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort()))
+        .via(Tcp.get(system).connect(serverAddress.getHostString(), serverAddress.getPort()))
         .runFold(ByteString.empty(),
             new Function2<ByteString, ByteString, ByteString>() {
               public ByteString apply(ByteString acc, ByteString elem) {
@@ -114,7 +114,7 @@ public class TcpTest extends StreamTest {
     try {
       try {
         Source.from(testInput)
-            .viaMat(Tcp.get(system).outgoingConnection(serverAddress.getHostString(), serverAddress.getPort()),
+            .viaMat(Tcp.get(system).connect(serverAddress.getHostString(), serverAddress.getPort()),
                 Keep.right())
             .to(Sink.<ByteString> ignore()).run(materializer).toCompletableFuture().get(5, TimeUnit.SECONDS);
         assertTrue("Expected StreamTcpException, but nothing was reported", false);

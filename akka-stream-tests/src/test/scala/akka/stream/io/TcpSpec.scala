@@ -36,7 +36,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val tcpReadProbe = new TcpReadProbe()
       val tcpWriteProbe = new TcpWriteProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       validateServerClientCommunication(testData, serverConnection, tcpReadProbe, tcpWriteProbe)
@@ -52,7 +52,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val testInput = (0 to 255).map(ByteString(_))
       val expectedOutput = ByteString(Array.tabulate(256)(_.asInstanceOf[Byte]))
 
-      Source(testInput).via(Tcp().outgoingConnection(server.address)).to(Sink.ignore).run()
+      Source(testInput).via(Tcp().connect(server.address)).to(Sink.ignore).run()
 
       val serverConnection = server.waitAccept()
       serverConnection.read(256)
@@ -67,7 +67,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val idle = new TcpWriteProbe() // Just register an idle upstream
       val resultFuture =
         Source.fromPublisher(idle.publisherProbe)
-          .via(Tcp().outgoingConnection(server.address))
+          .via(Tcp().connect(server.address))
           .runFold(ByteString.empty)((acc, in) ⇒ acc ++ in)
       val serverConnection = server.waitAccept()
 
@@ -83,7 +83,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
     "fail the materialized future when the connection fails" in assertAllStagesStopped {
       val tcpWriteProbe = new TcpWriteProbe()
       val future = Source.fromPublisher(tcpWriteProbe.publisherProbe)
-        .viaMat(Tcp().outgoingConnection(InetSocketAddress.createUnresolved("example.com", 666), connectTimeout = 1.second))(Keep.right)
+        .viaMat(Tcp().connect(InetSocketAddress.createUnresolved("example.com", 666), localAddress = None, options = Nil, halfClose = true, connectTimeout = 1.second, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = false))(Keep.right)
         .toMat(Sink.ignore)(Keep.left)
         .run()
 
@@ -98,7 +98,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Client can still write
@@ -122,13 +122,39 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       serverConnection.expectTerminated()
     }
 
-    "work when remote closes write, then client closes write" in assertAllStagesStopped {
+    "work when remote closes write, then client closes write automatically" in assertAllStagesStopped {
       val testData = ByteString(1, 2, 3, 4, 5)
       val server = new Server()
 
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe)
+        .via(Tcp().connect(server.address))
+        .to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      val serverConnection = server.waitAccept()
+
+      // Server can still write
+      serverConnection.write(testData)
+      tcpReadProbe.read(5) should be(testData)
+
+      // Close server side write
+      serverConnection.confirmedClose()
+      tcpReadProbe.subscriberProbe.expectComplete()
+
+      // Client read side is automatically closed
+      serverConnection.expectClosed(ConfirmedClosed)
+      serverConnection.expectTerminated()
+    }
+
+    "work when remote closes write, then client closes write explicitly" in assertAllStagesStopped {
+      val testData = ByteString(1, 2, 3, 4, 5)
+      val server = new Server()
+
+      val tcpWriteProbe = new TcpWriteProbe()
+      val tcpReadProbe = new TcpReadProbe()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe)
+        .via(Tcp().connect(server.address, localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = true))
+        .to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Server can still write
@@ -156,7 +182,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Server can still write
@@ -188,7 +214,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Client can still write
@@ -221,7 +247,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Server can still write
@@ -251,7 +277,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
 
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Server can still write
@@ -278,7 +304,9 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
 
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe)
+        .via(Tcp().connect(server.address, localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = true))
+        .to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       // Server can still write
@@ -307,7 +335,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val tcpWriteProbe = new TcpWriteProbe()
       val tcpReadProbe = new TcpReadProbe()
 
-      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().outgoingConnection(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
+      Source.fromPublisher(tcpWriteProbe.publisherProbe).via(Tcp().connect(server.address)).to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
       serverConnection.abort()
@@ -326,7 +354,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val tcpReadProbe = new TcpReadProbe()
 
       Source.fromPublisher(tcpWriteProbe.publisherProbe)
-        .via(Tcp().outgoingConnection(server.address, keepOpenOnPeerClosed = false))
+        .via(Tcp().connect(server.address, localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = false))
         .to(Sink.fromSubscriber(tcpReadProbe.subscriberProbe)).run()
       val serverConnection = server.waitAccept()
 
@@ -346,7 +374,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val tcpWriteProbe1 = new TcpWriteProbe()
       val tcpReadProbe2 = new TcpReadProbe()
       val tcpWriteProbe2 = new TcpWriteProbe()
-      val outgoingConnection = Tcp().outgoingConnection(server.address)
+      val outgoingConnection = Tcp().connect(server.address)
 
       val conn1F =
         Source.fromPublisher(tcpWriteProbe1.publisherProbe)
@@ -390,7 +418,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
           .futureValue
 
       val (promise, result) = Source.maybe[ByteString]
-        .via(Tcp().outgoingConnection(serverAddress.getHostString, serverAddress.getPort))
+        .via(Tcp().connect(InetSocketAddress.createUnresolved(serverAddress.getHostString, serverAddress.getPort), localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = true))
         .toMat(Sink.fold(ByteString.empty)(_ ++ _))(Keep.both)
         .run()
 
@@ -411,7 +439,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
           .futureValue
 
       val result = Source(immutable.Iterable.fill(1000)(ByteString(0)))
-        .via(Tcp().outgoingConnection(serverAddress, halfClose = true))
+        .via(Tcp().connect(serverAddress, localAddress = None, options = Nil, halfClose = true, connectTimeout = Duration.Inf, idleTimeout = Duration.Inf, keepOpenOnPeerClosed = false))
         .runFold(0)(_ + _.size)
 
       result.futureValue should ===(1000)
@@ -432,7 +460,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val result =
         Source.single(testMsg)
           .concat(Source.maybe[ByteString])
-          .via(Tcp(system2).outgoingConnection(serverAddress))
+          .via(Tcp(system2).connect(serverAddress))
           .runForeach { msg ⇒ probe.ref ! msg }(mat2)
 
       // Ensure first that the actor is there
@@ -469,7 +497,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       val testInput = (0 to 255).map(ByteString(_))
       val expectedOutput = ByteString(Array.tabulate(256)(_.asInstanceOf[Byte]))
       val resultFuture =
-        Source(testInput).via(Tcp().outgoingConnection(serverAddress)).runFold(ByteString.empty)((acc, in) ⇒ acc ++ in)
+        Source(testInput).via(Tcp().connect(serverAddress)).runFold(ByteString.empty)((acc, in) ⇒ acc ++ in)
 
       resultFuture.futureValue should be(expectedOutput)
       binding.unbind().futureValue
@@ -487,7 +515,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       // make sure that the server has bound to the socket
       val binding = bindingFuture.futureValue
 
-      val echoConnection = Tcp().outgoingConnection(serverAddress)
+      val echoConnection = Tcp().connect(serverAddress)
 
       val testInput = (0 to 255).map(ByteString(_))
       val expectedOutput = ByteString(Array.tabulate(256)(_.asInstanceOf[Byte]))
@@ -595,7 +623,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
         // then connect once, which should lead to the server cancelling
         val total = Source(immutable.Iterable.fill(100)(ByteString(0)))
-          .via(Tcp(clientSystem).outgoingConnection(address))
+          .via(Tcp(clientSystem).connect(address))
           .runFold(0)(_ + _.size)(clientMaterializer)
 
         serverGotRequest.future.futureValue
@@ -645,7 +673,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
 
       val firstProbe = TestPublisher.probe[ByteString]()
       val firstResult = Source.fromPublisher(firstProbe)
-        .via(Tcp().outgoingConnection(address))
+        .via(Tcp().connect(address))
         .runWith(Sink.seq)
 
       // create the first connection and wait until the flow is running server side
@@ -654,7 +682,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
       firstProbe.sendNext(ByteString(23))
 
       // then connect the second one, which will be ignored
-      val rejected = Source(List(ByteString(67))).via(Tcp().outgoingConnection(address)).runWith(Sink.seq)
+      val rejected = Source(List(ByteString(67))).via(Tcp().connect(address)).runWith(Sink.seq)
       secondClientIgnored.future.futureValue
 
       // first connection should be fine
@@ -678,7 +706,7 @@ class TcpSpec extends StreamSpec("akka.stream.materializer.subscription-timeout.
         bindingFuture.futureValue
         // and is possible to communicate with
         Source.single(ByteString(0))
-          .via(Tcp().outgoingConnection(address))
+          .via(Tcp().connect(address))
           .runWith(Sink.ignore)
           .futureValue
 
