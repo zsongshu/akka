@@ -785,8 +785,14 @@ object PartitionHub {
    */
   @ApiMayChange
   def sink[T](partitioner: (Int, T) ⇒ Int, startAfterNrOfConsumers: Int,
-              bufferSize: Int = defaultBufferSize): Sink[T, Source[T, NotUsed]] =
-    statefulSink(() ⇒ (info, elem) ⇒ info.consumerIdByIdx(partitioner(info.size, elem)), startAfterNrOfConsumers, bufferSize)
+              bufferSize: Int = defaultBufferSize): Sink[T, Source[T, NotUsed]] = {
+    val fun: (ConsumerInfo, T) ⇒ Long = { (info, elem) ⇒
+      val idx = partitioner(info.size, elem)
+      if (idx < 0) -1L
+      else info.consumerIdByIdx(idx)
+    }
+    statefulSink(() ⇒ fun, startAfterNrOfConsumers, bufferSize)
+  }
 
   @DoNotInherit @ApiMayChange trait ConsumerInfo extends akka.stream.javadsl.PartitionHub.ConsumerInfo {
 
@@ -1051,8 +1057,10 @@ object PartitionHub {
         pending :+= elem
       } else {
         val id = materializedPartitioner(consumerInfo, elem)
-        queue.offer(id, elem)
-        wakeup(id)
+        if (id >= 0) { // negative id is a way to drop the element
+          queue.offer(id, elem)
+          wakeup(id)
+        }
       }
     }
 
