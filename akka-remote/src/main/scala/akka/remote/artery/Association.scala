@@ -266,6 +266,7 @@ private[remote] class Association(
         // we signal that the handshake is completed (uniqueRemoteAddressPromise.trySuccess)
         import transport.system.dispatcher
         clearOutboundCompression().map { _ ⇒
+          log.debug(s"# $localAddress completeHandshake $peer")
           current.uniqueRemoteAddressPromise.trySuccess(peer)
           current.uniqueRemoteAddressValue() match {
             case Some(`peer`) ⇒
@@ -756,6 +757,7 @@ private[remote] class AssociationRegistry(createAssociation: Address ⇒ Associa
         val newAssociation = createAssociation(remoteAddress)
         val newMap = currentMap.updated(remoteAddress, newAssociation)
         if (associationsByAddress.compareAndSet(currentMap, newMap)) {
+          println(s"# associate $remoteAddress") // FIXME
           newAssociation.associate() // start it, only once
           newAssociation
         } else
@@ -784,9 +786,10 @@ private[remote] class AssociationRegistry(createAssociation: Address ⇒ Associa
       case _ ⇒
         // update associationsByUid Map with the uid -> assocation
         val newMap = currentMap.updated(peer.uid, a)
-        if (associationsByUid.compareAndSet(currentMap, newMap))
+        if (associationsByUid.compareAndSet(currentMap, newMap)) {
+          println(s"# association setUID $peer") // FIXME
           a
-        else
+        } else
           setUID(peer) // lost CAS, retry
     }
   }

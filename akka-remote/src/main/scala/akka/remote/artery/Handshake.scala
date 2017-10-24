@@ -174,8 +174,11 @@ private[remote] class InboundHandshake(inboundContext: InboundContext, inControl
           override def onPush(): Unit = {
             val env = grab(in)
             env.message match {
-              case HandshakeReq(from, to) ⇒ onHandshakeReq(from, to)
-              case HandshakeRsp(from) ⇒
+              case h @ HandshakeReq(from, to) ⇒
+                log.debug(s"# control stream $h")
+                onHandshakeReq(from, to)
+              case h @ HandshakeRsp(from) ⇒
+                log.debug(s"# control stream $h")
                 after(inboundContext.completeHandshake(from)) {
                   pull(in)
                 }
@@ -189,7 +192,9 @@ private[remote] class InboundHandshake(inboundContext: InboundContext, inControl
           override def onPush(): Unit = {
             val env = grab(in)
             env.message match {
-              case HandshakeReq(from, to) ⇒ onHandshakeReq(from, to)
+              case h @ HandshakeReq(from, to) ⇒
+                log.debug(s"# ordinary stream $h")
+                onHandshakeReq(from, to)
               case _ ⇒
                 onMessage(env)
             }
