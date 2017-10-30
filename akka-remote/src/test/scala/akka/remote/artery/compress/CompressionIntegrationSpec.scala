@@ -23,7 +23,7 @@ object CompressionIntegrationSpec {
 
   val commonConfig = ConfigFactory.parseString(s"""
      akka {
-       loglevel = INFO
+       loglevel = DEBUG
 
        actor {
          serialize-messages = off
@@ -298,9 +298,10 @@ class CompressionIntegrationSpec extends ArteryMultiNodeSpec(CompressionIntegrat
       receivedActorRefCompressionTableProbe.awaitAssert {
         currentTable =
           receivedActorRefCompressionTableProbe.expectMsgType[Events.ReceivedActorRefCompressionTable](2.seconds).table
+        println(s"# currentTable version: ${currentTable.version}, lastVersion $lastVersion") // FIXME
         // Until we get a new version, discard duplicates or old advertisements.
         // Please note that we might not get the advertisements in order
-        allRefs.forall(ref ⇒ currentTable.dictionary.contains(ref)) should be(true)
+        allRefs.toSet.diff(currentTable.dictionary.keySet) should ===(Set.empty[ActorRef])
       }
       currentTable.version should !==(lastVersion)
       lastTable = currentTable
