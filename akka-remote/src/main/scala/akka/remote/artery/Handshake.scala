@@ -108,6 +108,7 @@ private[remote] class OutboundHandshake(
               implicit val ec = materializer.executionContext
               uniqueRemoteAddress.foreach {
                 getAsyncCallback[UniqueAddress] { a ⇒
+                  println(s"# uniqueRemoteAddress $a completed, pending $pendingMessage, state $handshakeState, isAvailable ${isAvailable(out)} ") // FIXME
                   if (handshakeState != Completed) {
                     handshakeCompleted()
                     if (isAvailable(out))
