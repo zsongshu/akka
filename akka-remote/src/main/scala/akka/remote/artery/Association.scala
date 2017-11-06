@@ -241,8 +241,10 @@ private[remote] class Association(
    * @return Whether the previous state matched correctly
    */
   @inline
-  private[this] def swapState(oldState: AssociationState, newState: AssociationState): Boolean =
+  private[this] def swapState(oldState: AssociationState, newState: AssociationState): Boolean = {
+    println(s"# swapState $remoteAddress") // FIXME
     Unsafe.instance.compareAndSwapObject(this, AbstractAssociation.sharedStateOffset, oldState, newState)
+  }
 
   /**
    * @return Reference to current shared state
