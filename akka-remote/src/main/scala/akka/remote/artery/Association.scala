@@ -242,7 +242,7 @@ private[remote] class Association(
    */
   @inline
   private[this] def swapState(oldState: AssociationState, newState: AssociationState): Boolean = {
-    println(s"# swapState $remoteAddress") // FIXME
+//    println(s"# swapState $remoteAddress") // FIXME
     Unsafe.instance.compareAndSwapObject(this, AbstractAssociation.sharedStateOffset, oldState, newState)
   }
 
@@ -759,7 +759,7 @@ private[remote] class AssociationRegistry(createAssociation: Address ⇒ Associa
         val newAssociation = createAssociation(remoteAddress)
         val newMap = currentMap.updated(remoteAddress, newAssociation)
         if (associationsByAddress.compareAndSet(currentMap, newMap)) {
-          println(s"# associate $remoteAddress") // FIXME
+//          println(s"# associate $remoteAddress") // FIXME
           newAssociation.associate() // start it, only once
           newAssociation
         } else
@@ -789,7 +789,7 @@ private[remote] class AssociationRegistry(createAssociation: Address ⇒ Associa
         // update associationsByUid Map with the uid -> assocation
         val newMap = currentMap.updated(peer.uid, a)
         if (associationsByUid.compareAndSet(currentMap, newMap)) {
-          println(s"# association setUID $peer") // FIXME
+//          println(s"# association setUID $peer") // FIXME
           a
         } else
           setUID(peer) // lost CAS, retry

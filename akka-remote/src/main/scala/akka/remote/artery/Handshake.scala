@@ -103,7 +103,7 @@ private[remote] class OutboundHandshake(
           case Start ⇒
             val uniqueRemoteAddress = outboundContext.associationState.uniqueRemoteAddress
             if (uniqueRemoteAddress.isCompleted) {
-              println(s"# uniqueRemoteAddress ${outboundContext.remoteAddress} completed at Start")
+//              println(s"# uniqueRemoteAddress ${outboundContext.remoteAddress} completed at Start")
               handshakeState = Completed
             } else {
               // will pull when handshake reply is received (uniqueRemoteAddress completed)
@@ -114,10 +114,10 @@ private[remote] class OutboundHandshake(
               // The InboundHandshake stage will complete the uniqueRemoteAddress future
               // when it receives the HandshakeRsp reply
               implicit val ec = materializer.executionContext
-              println(s"# registered callback for ${outboundContext.remoteAddress} ${uniqueRemoteAddress.hashCode} vs ${outboundContext.associationState.uniqueRemoteAddress.hashCode}") // FIXME
+//              println(s"# registered callback for ${outboundContext.remoteAddress} ${uniqueRemoteAddress.hashCode} vs ${outboundContext.associationState.uniqueRemoteAddress.hashCode}") // FIXME
               uniqueRemoteAddress.foreach {
                 getAsyncCallback[UniqueAddress] { a ⇒
-                  println(s"# uniqueRemoteAddress $a completed, pending $pendingMessage, state $handshakeState, isAvailable ${isAvailable(out)} ") // FIXME
+//                  println(s"# uniqueRemoteAddress $a completed, pending $pendingMessage, state $handshakeState, isAvailable ${isAvailable(out)} ") // FIXME
                   if (handshakeState != Completed) {
                     handshakeCompleted()
                     if (isAvailable(out))
