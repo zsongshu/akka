@@ -93,8 +93,16 @@ private[remote] class Encoder(
         debugLogSendEnabled = debugLogSend && log.isDebugEnabled
       }
 
+      private var firstMessageLogged = false
+
       override def onPush(): Unit = {
         val outboundEnvelope = grab(in)
+
+        if (!firstMessageLogged && outboundEnvelope.recipient.isDefined) {
+          println(s"# firstMessage to ${outboundEnvelope.recipient}: ${outboundEnvelope.message}") // FIXME
+          firstMessageLogged = true
+        }
+
         val envelope = bufferPool.acquire()
 
         headerBuilder.resetMessageFields()

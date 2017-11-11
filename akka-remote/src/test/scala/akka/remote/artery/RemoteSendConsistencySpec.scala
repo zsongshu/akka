@@ -62,7 +62,7 @@ abstract class AbstractRemoteSendConsistencySpec(config: Config) extends ArteryM
       echoSel ! "ping"
       expectMsg("pong")
     }
-    /*
+
     "not send to remote re-created actor with same name" in {
       val echo = systemB.actorOf(TestActors.echoActorProps, "otherEcho1")
       echo ! 71
@@ -170,7 +170,6 @@ abstract class AbstractRemoteSendConsistencySpec(config: Config) extends ArteryM
       }
     }
 
-  */
   }
 
 }
