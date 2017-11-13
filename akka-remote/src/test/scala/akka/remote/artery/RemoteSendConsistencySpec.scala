@@ -43,7 +43,7 @@ abstract class AbstractRemoteSendConsistencySpec(config: Config) extends ArteryM
       val echoSel = system.actorSelection(rootB / "user" / "echo")
       val echoRef = {
         system.actorSelection(rootB / "user" / "echo") ! Identify(None)
-        expectMsgType[ActorIdentity](5.seconds).ref.get
+        expectMsgType[ActorIdentity](10.seconds).ref.get
       }
 
       echoRef ! "ping"

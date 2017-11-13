@@ -99,7 +99,7 @@ private[remote] class Encoder(
         val outboundEnvelope = grab(in)
 
         if (!firstMessageLogged && outboundEnvelope.recipient.isDefined) {
-          println(s"# firstMessage to ${outboundEnvelope.recipient}: ${outboundEnvelope.message}") // FIXME
+          println(s"# Encoder firstMessage to ${outboundEnvelope.recipient}: ${outboundEnvelope.message}") // FIXME
           firstMessageLogged = true
         }
 
@@ -621,6 +621,8 @@ private[remote] class Deserializer(
 
       override protected def logSource = classOf[Deserializer]
 
+      private var firstMessageLogged = false
+
       override def onPush(): Unit = {
         val envelope = grab(in)
 
@@ -629,6 +631,11 @@ private[remote] class Deserializer(
 
           val deserializedMessage = MessageSerializer.deserializeForArtery(
             system, envelope.originUid, serialization, envelope.serializer, envelope.classManifest, envelope.envelopeBuffer)
+
+          if (!firstMessageLogged && envelope.recipient.isDefined) {
+            println(s"# Deserializer firstMessage to ${envelope.recipient}: $deserializedMessage") // FIXME
+            firstMessageLogged = true
+          }
 
           val envelopeWithMessage = envelope.withMessage(deserializedMessage)
 

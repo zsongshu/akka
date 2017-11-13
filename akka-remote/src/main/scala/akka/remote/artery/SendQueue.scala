@@ -118,9 +118,23 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
         queuePromise.success(q)
       }
 
+      private var firstMessageLogged = false
+
       override def offer(message: T): Boolean = {
         val q = producerQueue
         if (q eq null) throw new IllegalStateException("offer not allowed before injecting the queue")
+
+        if (!firstMessageLogged) {
+          message match {
+            case envelope: OutboundEnvelope ⇒
+              if (envelope.recipient.isDefined) {
+                println(s"# SendQueue firstMessage to ${envelope.recipient}: ${envelope.message}") // FIXME
+                firstMessageLogged = true
+              }
+            case _ ⇒
+          }
+        }
+
         val result = q.offer(message)
         if (result && needWakeup) {
           needWakeup = false
