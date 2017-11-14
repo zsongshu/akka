@@ -38,6 +38,7 @@ object FanOutThroughputSpec extends MultiNodeConfig {
 
   commonConfig(debugConfig(on = false).withFallback(
     ConfigFactory.parseString(s"""
+       akka.loglevel = DEBUG
        # for serious measurements you should increase the totalMessagesFactor (20)
        akka.test.FanOutThroughputSpec.totalMessagesFactor = 10.0
        akka.test.FanOutThroughputSpec.real-message = off
@@ -175,7 +176,6 @@ abstract class FanOutThroughputSpec extends RemotingMultiNodeSpec(FanOutThroughp
   }
 
   "Max throughput of fan-out" must {
-    pending
     val reporter = BenchmarkFileReporter("FanOutThroughputSpec", system)
     for (s ← scenarios) {
       s"be great for ${s.testName}, burstSize = ${s.burstSize}, payloadSize = ${s.payloadSize}" in test(s, reporter)

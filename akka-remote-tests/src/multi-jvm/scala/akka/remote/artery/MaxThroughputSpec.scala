@@ -36,7 +36,7 @@ object MaxThroughputSpec extends MultiNodeConfig {
      akka.test.MaxThroughputSpec.actor-selection = off
      akka {
        loglevel = INFO
-       log-dead-letters = 10000
+       log-dead-letters = 100
        # avoid TestEventListener
        loggers = ["akka.event.Logging$$DefaultLogger"]
        testconductor.barrier-timeout = ${barrierTimeout.toSeconds}s
