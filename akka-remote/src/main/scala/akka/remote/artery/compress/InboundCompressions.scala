@@ -166,7 +166,7 @@ private[remote] final class InboundActorRefCompression(
   originUid:      Long,
   inboundContext: InboundContext,
   heavyHitters:   TopHeavyHitters[ActorRef])
-  extends InboundCompression[ActorRef](log, settings, originUid, inboundContext, heavyHitters) {
+  extends InboundCompression[ActorRef](log, settings, originUid, inboundContext, heavyHitters) { // FIXME fix the logger
 
   override def decompress(tableVersion: Byte, idx: Int): OptionVal[ActorRef] =
     super.decompressInternal(tableVersion, idx, 0)
@@ -329,7 +329,8 @@ private[remote] abstract class InboundCompression[T >: Null](
 
         case _ if incomingVersionIsAdvertisementInProgress(incomingTableVersion) ⇒
           log.debug(
-            "Received first value from originUid [{}] compressed using the advertised compression table, flipping to it (version: {})",
+            "Received first value from originUid [{}] compressed using the advertised compression table, " +
+              "flipping to it (version: {})",
             originUid, current.nextTable.version)
           confirmAdvertisement(incomingTableVersion)
           decompressInternal(incomingTableVersion, idx, attemptCounter + 1) // recurse
@@ -404,7 +405,7 @@ private[remote] abstract class InboundCompression[T >: Null](
               resendCount = 0
               advertiseCompressionTable(association, table)
             } else
-              log.debug("Inbound compression table for originUid [{}] not changed, no need to advertise same.", originUid)
+              log.debug("{} for originUid [{}] not changed, no need to advertise same.", Logging.simpleName(tables.activeTable), originUid)
 
           case OptionVal.None ⇒
             // otherwise it's too early, association not ready yet.
@@ -451,7 +452,7 @@ private[remote] abstract class InboundCompression[T >: Null](
   }
 
   override def toString =
-    s"""${getClass.getSimpleName}(countMinSketch: $cms, heavyHitters: $heavyHitters)"""
+    s"""${Logging.simpleName(getClass)}(countMinSketch: $cms, heavyHitters: $heavyHitters)"""
 
 }
 
