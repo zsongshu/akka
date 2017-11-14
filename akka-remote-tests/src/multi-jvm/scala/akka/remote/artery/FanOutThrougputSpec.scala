@@ -96,7 +96,8 @@ abstract class FanOutThroughputSpec extends RemotingMultiNodeSpec(FanOutThroughp
     else ActorRefTarget(ref)
   }
 
-  val burstSize = 2000 / senderReceiverPairs
+  // each sender may have 3 bursts in flight
+  val burstSize = 3000 / senderReceiverPairs / 3
   val scenarios = List(
     TestSettings(
       testName = "warmup",
