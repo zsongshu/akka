@@ -3,7 +3,9 @@
  */
 package akka.remote.artery
 
+import java.util
 import java.util.Queue
+
 import akka.stream.stage.GraphStage
 import akka.stream.stage.OutHandler
 import akka.stream.Attributes
@@ -15,6 +17,7 @@ import akka.stream.stage.GraphStageWithMaterializedValue
 import org.agrona.concurrent.ManyToOneConcurrentLinkedQueueTail
 import org.agrona.concurrent.ManyToOneConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.concurrent.Promise
 import scala.util.Try
@@ -58,15 +61,20 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
       // using a local field for the consumer side of queue to avoid volatile access
       private var consumerQueue: Queue[T] = null
 
+      private val trace = new util.ArrayList[Any]()
+
       private val wakeupCallback = getAsyncCallback[Unit] { _ ⇒
-        if (isAvailable(out))
+        if (isAvailable(out)) {
+          trace.add("wakeupCallback")
           tryPush()
+        }
       }
 
       override def preStart(): Unit = {
         implicit val ec = materializer.executionContext
         queuePromise.future.onComplete(getAsyncCallback[Try[Queue[T]]] {
           case Success(q) ⇒
+            trace.add("preStart")
             consumerQueue = q
             needWakeup = true
             if (isAvailable(out))
@@ -77,19 +85,23 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
       }
 
       override def onPull(): Unit = {
-        if (consumerQueue ne null)
+        if (consumerQueue ne null) {
+          trace.add("onPull")
           tryPush()
+        }
       }
 
       @tailrec private def tryPush(firstAttempt: Boolean = true): Unit = {
         consumerQueue.poll() match {
           case null ⇒
+            trace.add(s"tryPush null $firstAttempt")
             needWakeup = true
             // additional poll() to grab any elements that might missed the needWakeup
             // and have been enqueued just after it
             if (firstAttempt)
               tryPush(firstAttempt = false)
           case elem ⇒
+            trace.add(s"tryPush $elem")
             needWakeup = false // there will be another onPull
             push(out, elem)
         }
@@ -101,6 +113,10 @@ private[remote] final class SendQueue[T] extends GraphStageWithMaterializedValue
       }
 
       override def postStop(): Unit = {
+        import scala.collection.JavaConverters._
+        println(s"# SendQueue trace: [${trace.asScala.mkString(", ")}]") // FIXME
+        trace.clear()
+
         // TODO quarantine will currently always be done when control stream is terminated, see issue #21359
         if (consumerQueue ne null)
           consumerQueue.clear()
