@@ -357,10 +357,6 @@ private[remote] class Association(
             val outboundEnvelope = createOutboundEnvelope()
             val queueIndex = selectQueue(recipient)
             val queue = queues(queueIndex)
-            queue match {
-              case _: QueueWrapper ⇒ Thread.sleep(10)
-              case _               ⇒
-            }
             val offerOk = queue.offer(outboundEnvelope)
             if (!offerOk)
               dropped(queueIndex, queueSize, outboundEnvelope)
