@@ -147,7 +147,7 @@ private[remote] class Association(
   (0 until outboundLanes).foreach { i ⇒
     queues(OrdinaryQueueIndex + i) = QueueWrapperImpl(createQueue(queueSize)) // ordinary messages stream
   }
-  @volatile private[this] var queuesVisibility = false
+  /*@volatile FIXME */ private[this] var queuesVisibility = false
 
   private def controlQueue: SendQueue.ProducerApi[OutboundEnvelope] = queues(ControlQueueIndex)
   private def largeQueue: SendQueue.ProducerApi[OutboundEnvelope] = queues(LargeQueueIndex)

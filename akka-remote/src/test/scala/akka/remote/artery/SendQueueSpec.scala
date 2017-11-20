@@ -17,6 +17,7 @@ import akka.stream.testkit.scaladsl.TestSink
 import akka.testkit.AkkaSpec
 import akka.testkit.ImplicitSender
 import org.agrona.concurrent.ManyToOneConcurrentArrayQueue
+import akka.stream.testkit.TestSubscriber
 
 object SendQueueSpec {
 
@@ -145,6 +146,67 @@ class SendQueueSpec extends AkkaSpec("akka.actor.serialize-messages = off") with
       }
 
       downstream.cancel()
+    }
+
+    "deliver first message" in {
+
+      def test(f: (ManyToOneConcurrentArrayQueue[String], SendQueue.QueueValue[String], TestSubscriber.Probe[String]) ⇒ Unit): Unit = {
+
+        (1 to 10).foreach { n ⇒
+          val queue = new ManyToOneConcurrentArrayQueue[String](16)
+          val (sendQueue, downstream) = Source.fromGraph(new SendQueue[String])
+            .toMat(TestSink.probe)(Keep.both).run()
+
+          f(queue, sendQueue, downstream)
+          downstream.expectNext("a")
+
+          sendQueue.offer("b")
+          downstream.expectNext("b")
+          sendQueue.offer("c")
+          sendQueue.offer("d")
+          downstream.expectNext("c")
+          downstream.expectNext("d")
+          downstream.cancel()
+        }
+      }
+
+      test { (queue, sendQueue, downstream) ⇒
+        queue.offer("a")
+        downstream.request(10)
+        sendQueue.inject(queue)
+      }
+      test { (queue, sendQueue, downstream) ⇒
+        sendQueue.inject(queue)
+        queue.offer("a")
+        downstream.request(10)
+      }
+
+      test { (queue, sendQueue, downstream) ⇒
+        queue.offer("a")
+        sendQueue.inject(queue)
+        downstream.request(10)
+      }
+      test { (queue, sendQueue, downstream) ⇒
+        downstream.request(10)
+        queue.offer("a")
+        sendQueue.inject(queue)
+      }
+
+      test { (queue, sendQueue, downstream) ⇒
+        sendQueue.inject(queue)
+        downstream.request(10)
+        sendQueue.offer("a")
+      }
+      test { (queue, sendQueue, downstream) ⇒
+        downstream.request(10)
+        sendQueue.inject(queue)
+        sendQueue.offer("a")
+      }
+      test { (queue, sendQueue, downstream) ⇒
+        sendQueue.inject(queue)
+        sendQueue.offer("a")
+        downstream.request(10)
+      }
     }
 
   }
