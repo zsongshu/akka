@@ -150,22 +150,26 @@ object Behavior {
   }
 
   /**
-   * INTERNAL API.
+   * INTERNAL API
    */
   @InternalApi
   private[akka] object UnhandledBehavior extends Behavior[Nothing] {
     override def toString = "Unhandled"
   }
 
-  /**
-   * INTERNAL API.
-   */
+  /** INTERNAL API */
   @InternalApi
   private[akka] abstract class UntypedBehavior[T] extends Behavior[T] {
-    /**
-     * INTERNAL API
-     */
+    /** INTERNAL API */
     @InternalApi private[akka] def untypedProps: akka.actor.Props
+  }
+
+  // FIXME not final solution I guess
+  /** INTERNAL API: Used to bridge Behaviors between Java DSL and Scala DSL, where one of the sides is the implementation */
+  @InternalApi
+  private[akka] abstract class DelegatingBehavior[T] extends Behavior[T] {
+    /** INTERNAL API */
+    @InternalApi private[akka] def delegate: Behavior[T]
   }
 
   /**
@@ -180,13 +184,18 @@ object Behavior {
    * Not placed in internal.BehaviorImpl because Behavior is sealed.
    */
   @InternalApi
-  private[akka] final case class DeferredBehavior[T](factory: SAC[T] ⇒ Behavior[T]) extends Behavior[T] {
+  @DoNotInherit
+  private[akka] class DeferredBehavior[T](val factory: SAC[T] ⇒ Behavior[T]) extends Behavior[T] {
 
     /** start the deferred behavior */
     @throws(classOf[Exception])
     def apply(ctx: ActorContext[T]): Behavior[T] = factory(ctx.asScala)
 
     override def toString: String = s"Deferred(${LineNumbers(factory)})"
+  }
+  object DeferredBehavior {
+    def apply[T](factory: SAC[T] ⇒ Behavior[T]) =
+      new DeferredBehavior[T](factory)
   }
 
   /**
@@ -299,12 +308,15 @@ object Behavior {
   def interpretSignal[T](behavior: Behavior[T], ctx: ActorContext[T], signal: Signal): Behavior[T] =
     interpret(behavior, ctx, signal)
 
-  private def interpret[T](behavior: Behavior[T], ctx: ActorContext[T], msg: Any): Behavior[T] =
+  private def interpret[T](behavior: Behavior[T], ctx: ActorContext[T], msg: Any): Behavior[T] = {
     behavior match {
       case null ⇒ throw new InvalidMessageException("[null] is not an allowed message")
       case SameBehavior | UnhandledBehavior ⇒
         throw new IllegalArgumentException(s"cannot execute with [$behavior] as behavior")
       case _: UntypedBehavior[_] ⇒
+        throw new IllegalArgumentException(s"cannot wrap behavior [$behavior] in " +
+          "Behaviors.setup, Behaviors.supervise or similar")
+      case _: DelegatingBehavior[_] ⇒
         throw new IllegalArgumentException(s"cannot wrap behavior [$behavior] in " +
           "Behaviors.setup, Behaviors.supervise or similar")
       case d: DeferredBehavior[_] ⇒ throw new IllegalArgumentException(s"deferred [$d] should not be passed to interpreter")
@@ -318,6 +330,7 @@ object Behavior {
         }
         start(possiblyDeferredResult, ctx)
     }
+  }
 
   /**
    * INTERNAL API
@@ -331,10 +344,8 @@ object Behavior {
       if (!Behavior.isAlive(b2) || !messages.hasNext) b2
       else {
         val nextB = messages.next() match {
-          case sig: Signal ⇒
-            Behavior.interpretSignal(b2, ctx, sig)
-          case msg ⇒
-            Behavior.interpretMessage(b2, ctx, msg)
+          case sig: Signal ⇒ Behavior.interpretSignal(b2, ctx, sig)
+          case msg         ⇒ Behavior.interpretMessage(b2, ctx, msg)
         }
         interpretOne(Behavior.canonicalize(nextB, b, ctx)) // recursive
       }
