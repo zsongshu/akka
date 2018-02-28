@@ -40,10 +40,6 @@ abstract class EventsourcedRunning[Command, Event, State](
   // Holds callbacks for persist calls (note that we do not implement persistAsync currently)
   private def hasNoPendingInvocations: Boolean = pendingInvocations.isEmpty
   private val pendingInvocations = new java.util.LinkedList[PendingHandlerInvocation]() // we only append / isEmpty / get(0) on it
-  private var eventBatch: List[PersistentEnvelope] = Nil
-
-  private var journalBatch = Vector.empty[PersistentEnvelope]
-  private var writeInProgress = false
 
   // ----------
 
@@ -87,12 +83,18 @@ abstract class EventsourcedRunning[Command, Event, State](
     }
   }
 
-  object PersistingEvents extends EventsourcedRunningPhase {
+  object PersistingEventsNoSideEffects extends PersistingEvents(Nil)
+
+  sealed class PersistingEvents(sideEffects: immutable.Seq[ChainableEffect[_, S]]) extends EventsourcedRunningPhase {
+    println(s"WAITING sideEffects = ${sideEffects}")
+
     def name = "PersistingEvents"
     final override def onCommand(c: Command): Behavior[Any] = {
       log.info(s"PERSISTING EVENTS, command, STASH: ${c}")
-      stash(c, same)
+      stash(c)
+      same
     }
+
     final override def onJournalResponse(response: Response): Behavior[Any] = {
       log.info("RESPONSE == " + response)
       response match {
@@ -103,6 +105,7 @@ abstract class EventsourcedRunning[Command, Event, State](
             updateLastSequenceNr(p)
             popApplyHandler(p.payload)
             onWriteMessageComplete()
+            tryUnstash(context, applySideEffects(sideEffects))
           } else same
 
         case WriteMessageRejected(p, cause, id) ⇒
@@ -110,8 +113,8 @@ abstract class EventsourcedRunning[Command, Event, State](
           // while message is in flight, in that case the handler has already been discarded
           if (id == writerIdentity.instanceId) {
             updateLastSequenceNr(p)
-            onWriteMessageComplete() // FIXME no sure if we should call it here
-            onPersistRejected(cause, p.payload, p.sequenceNr)
+            onPersistRejected(cause, p.payload, p.sequenceNr) // does not stop
+            tryUnstash(context, applySideEffects(sideEffects))
           } else same
 
         case WriteMessageFailure(p, cause, id) ⇒
@@ -122,41 +125,37 @@ abstract class EventsourcedRunning[Command, Event, State](
             onPersistFailureThenStop(cause, p.payload, p.sequenceNr)
           } else same
 
-        case _: LoopMessageSuccess ⇒
-          // ignore, not used in Typed Persistence (needed for persistAsync)
+        case WriteMessagesSuccessful ⇒
+          // ignore
           same
 
-        case WriteMessagesSuccessful ⇒
-          writeInProgress = false
-          flushJournalBatch()
-
         case WriteMessagesFailed(_) ⇒
-          writeInProgress = false
-          same // it will be stopped by the first WriteMessageFailure message
+          // ignore
+          same // it will be stopped by the first WriteMessageFailure message; not applying side effects
 
+        case _: LoopMessageSuccess ⇒
+          ??? // ignore, not used in Typed Persistence (needed for persistAsync)
       }
     }
 
-    private def onWriteMessageComplete(): Behavior[Any] = {
-      tryBecomeHandlingCommands()
-      tryUnstash(context, same)
-    }
+    private def applySideEffectsAndUnstash(): Behavior[Any] =
+      tryUnstash(context, applySideEffects(sideEffects))
 
-    private def onPersistRejected(cause: Throwable, event: Any, seqNr: Long): Behavior[Any] = {
+    private def onWriteMessageComplete(): Unit =
+      tryBecomeHandlingCommands()
+
+    private def onPersistRejected(cause: Throwable, event: Any, seqNr: Long): Unit = {
       log.error(
         cause,
         "Rejected to persist event type [{}] with sequence number [{}] for persistenceId [{}] due to [{}].",
         event.getClass.getName, seqNr, persistenceId, cause.getMessage)
-
-      same
     }
 
     private def onPersistFailureThenStop(cause: Throwable, event: Any, seqNr: Long): Behavior[Any] = {
       log.error(cause, "Failed to persist event type [{}] with sequence number [{}] for persistenceId [{}].",
         event.getClass.getName, seqNr, persistenceId)
 
-      // FIXME should we throw perhaps instead?
-
+      // FIXME see #24479 for reconsidering the stopping behaviour
       Behaviors.stopped
     }
 
@@ -215,6 +214,7 @@ abstract class EventsourcedRunning[Command, Event, State](
     eventHandler(s, event)
 
   @tailrec private def applyEffects(msg: Any, effect: EffectImpl[E, S], sideEffects: immutable.Seq[ChainableEffect[_, S]] = Nil): Behavior[Any] = {
+    log.info(s"APPLY EFFECTS: ${msg} =>> ${effect} ;;; side: ${sideEffects}")
     effect match {
       case CompositeEffect(e, currentSideEffects) ⇒
         // unwrap and accumulate effects
@@ -228,9 +228,7 @@ abstract class EventsourcedRunning[Command, Event, State](
         val tags = tagger(event)
         val eventToPersist = if (tags.isEmpty) event else Tagged(event, tags)
 
-        internalPersist(eventToPersist) { _ ⇒
-          applySideEffects(sideEffects)
-
+        internalPersist(eventToPersist, sideEffects) { _ ⇒
           if (snapshotWhen(state, event, lastSequenceNr))
             internalSaveSnapshot(state)
         }
@@ -253,7 +251,8 @@ abstract class EventsourcedRunning[Command, Event, State](
             val tags = tagger(event)
             if (tags.isEmpty) event else Tagged(event, tags)
           }
-          internalPersistAll(eventsToPersist) { _ ⇒
+
+          internalPersistAll(eventsToPersist, sideEffects) { _ ⇒
             count -= 1
             if (count == 0) {
               sideEffects.foreach(applySideEffect)
@@ -263,9 +262,8 @@ abstract class EventsourcedRunning[Command, Event, State](
           }
         } else {
           // run side-effects even when no events are emitted
-          applySideEffects(sideEffects)
+          tryUnstash(context, applySideEffects(sideEffects))
         }
-        tryUnstash(context, same)
 
       case e: PersistNothing.type @unchecked ⇒
         tryUnstash(context, applySideEffects(sideEffects))
@@ -280,40 +278,24 @@ abstract class EventsourcedRunning[Command, Event, State](
   }
 
   private def popApplyHandler(payload: Any): Unit =
-    try pendingInvocations.pop().handler(payload)
-    finally flushBatch()
+    pendingInvocations.pop().handler(payload)
 
-  private def flushBatch() {
-    if (eventBatch.nonEmpty) {
-      journalBatch ++= eventBatch.reverse
-      eventBatch = Nil
-    }
-
-    flushJournalBatch()
-  }
-
-  private def flushJournalBatch(): Behavior[Any] = {
-    if (!writeInProgress && journalBatch.nonEmpty) {
-      journal ! WriteMessages(journalBatch, selfUntypedAdapted, writerIdentity.instanceId) // TODO maybe we don't need the adapting...
-      journalBatch = Vector.empty
-      writeInProgress = true
-    }
-
-    same
-  }
-
-  private def becomePersistingEvents(): Behavior[Any] = {
-    if (phase == PersistingEvents) throw new IllegalArgumentException(
+  private def becomePersistingEvents(sideEffects: immutable.Seq[ChainableEffect[_, S]]): Behavior[Any] = {
+    if (phase.isInstanceOf[PersistingEvents]) throw new IllegalArgumentException(
       "Attempted to become PersistingEvents while already in this phase! Logic error?")
 
-    phase = PersistingEvents
+    phase =
+      if (sideEffects.isEmpty) PersistingEventsNoSideEffects
+      else new PersistingEvents(sideEffects)
+
     same
   }
+
   private def tryBecomeHandlingCommands(): Behavior[Any] = {
     if (phase == HandlingCommands) throw new IllegalArgumentException(
       "Attempted to become HandlingCommands while already in this phase! Logic error?")
 
-    if (hasNoPendingInvocations) {
+    if (hasNoPendingInvocations) { // CAN THIS EVER NOT HAPPEN?
       phase = HandlingCommands
     }
 
@@ -323,34 +305,33 @@ abstract class EventsourcedRunning[Command, Event, State](
   // ---------- journal interactions ---------
 
   // Any since can be `E` or `Tagged`
-  private def internalPersist(event: Any)(handler: Any ⇒ Unit): Behavior[Any] = {
+  private def internalPersist(event: Any, sideEffects: immutable.Seq[ChainableEffect[_, S]])(handler: Any ⇒ Unit): Behavior[Any] = {
+    println(s"internalPersist() SIDE: ${sideEffects}")
     pendingInvocations addLast StashingHandlerInvocation(event, handler.asInstanceOf[Any ⇒ Unit])
 
     val senderNotKnownBecauseAkkaTyped = null
     val repr = PersistentRepr(event, persistenceId = persistenceId, sequenceNr = nextSequenceNr(), writerUuid = writerIdentity.writerUuid, sender = senderNotKnownBecauseAkkaTyped)
 
-    eventBatch ::= AtomicWrite(repr) // batching not used, since no persistAsync
+    val eventBatch = AtomicWrite(repr) :: Nil // batching not used, since no persistAsync
     journal.tell(JournalProtocol.WriteMessages(eventBatch, selfUntypedAdapted, writerIdentity.instanceId), selfUntypedAdapted)
-    eventBatch = Nil
 
-    becomePersistingEvents()
+    becomePersistingEvents(sideEffects)
   }
 
-  private def internalPersistAll(events: immutable.Seq[Any])(handler: Any ⇒ Unit): Behavior[Any] = {
+  private def internalPersistAll(events: immutable.Seq[Any], sideEffects: immutable.Seq[ChainableEffect[_, S]])(handler: Any ⇒ Unit): Behavior[Any] = {
     if (events.nonEmpty) {
       val senderNotKnownBecauseAkkaTyped = null
 
       events.foreach { event ⇒
         pendingInvocations addLast StashingHandlerInvocation(event, handler.asInstanceOf[Any ⇒ Unit])
       }
+
       val write = AtomicWrite(events.map(PersistentRepr.apply(_, persistenceId = persistenceId,
         sequenceNr = nextSequenceNr(), writerUuid = writerIdentity.writerUuid, sender = senderNotKnownBecauseAkkaTyped)))
 
-      eventBatch ::= write
-      journal.tell(JournalProtocol.WriteMessages(eventBatch, selfUntypedAdapted, writerIdentity.instanceId), selfUntypedAdapted)
-      eventBatch = Nil
+      journal.tell(JournalProtocol.WriteMessages(write :: Nil, selfUntypedAdapted, writerIdentity.instanceId), selfUntypedAdapted)
 
-      becomePersistingEvents()
+      becomePersistingEvents(sideEffects)
     } else same
   }
 
