@@ -38,9 +38,8 @@ import scala.collection.immutable
 @InternalApi private[akka] object EventsourcedRunning {
 
   final case class EventsourcedState[State](
-    seqNr:              Long,
-    state:              State,
-    pendingInvocations: immutable.Seq[PendingHandlerInvocation] = Nil
+    seqNr: Long,
+    state: State
   ) {
 
     def nextSequenceNr(): EventsourcedState[State] =
@@ -48,16 +47,6 @@ import scala.collection.immutable
 
     def updateLastSequenceNr(persistent: PersistentRepr): EventsourcedState[State] =
       if (persistent.sequenceNr > seqNr) copy(seqNr = persistent.sequenceNr) else this
-
-    def popApplyPendingInvocation(repr: PersistentRepr): EventsourcedState[State] = {
-      val (headSeq, remainingInvocations) = pendingInvocations.splitAt(1)
-      headSeq.head.handler(repr.payload)
-
-      copy(
-        pendingInvocations = remainingInvocations,
-        seqNr = repr.sequenceNr
-      )
-    }
 
     def applyEvent[C, E](setup: EventsourcedSetup[C, E, State], event: E): EventsourcedState[State] = {
       val updated = setup.eventHandler(state, event)
@@ -218,10 +207,13 @@ import scala.collection.immutable
           // instanceId mismatch can happen for persistAsync and defer in case of actor restart
           // while message is in flight, in that case we ignore the call to the handler
           if (id == setup.writerIdentity.instanceId) {
-            state = state.popApplyPendingInvocation(p)
+            state = state.updateLastSequenceNr(p)
+            // FIXME is the order of pendingInvocations not reversed?
+            pendingInvocations.head.handler(p.payload)
+            pendingInvocations = pendingInvocations.tail
 
             // only once all things are applied we can revert back
-            if (state.pendingInvocations.isEmpty) this
+            if (pendingInvocations.nonEmpty) this
             else tryUnstash(applySideEffects(sideEffects, state))
           } else this
 
@@ -299,7 +291,7 @@ import scala.collection.immutable
   }
 
   def applySideEffects(effects: immutable.Seq[ChainableEffect[_, S]], state: EventsourcedState[S]): Behavior[InternalProtocol] = {
-    var res: Behavior[InternalProtocol] = Behaviors.same
+    var res: Behavior[InternalProtocol] = handlingCommands(state)
     val it = effects.iterator
 
     // if at least one effect results in a `stop`, we need to stop
