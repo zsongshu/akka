@@ -122,15 +122,6 @@ private[persistence] class EventsourcedRecoveringEvents[C, E, S](
     Behaviors.same
   }
 
-  // FYI, have to keep carrying all [C,E,S] everywhere as otherwise ending up with:
-  //  [error] /Users/ktoso/code/akka/akka-persistence-typed/src/main/scala/akka/persistence/typed/internal/EventsourcedRecoveringEvents.scala:117:14: type mismatch;
-  //  [error]  found   : akka.persistence.typed.internal.EventsourcedSetup[Command,_$1,_$2] where type _$2, type _$1
-  //  [error]  required: akka.persistence.typed.internal.EventsourcedSetup[Command,_$1,Any] where type _$1
-  //  [error] Note: _$2 <: Any, but class EventsourcedSetup is invariant in type State.
-  //  [error] You may wish to define State as +State instead. (SLS 4.5)
-  //  [error] Error occurred in an application involving default arguments.
-  //  [error]         stay(setup, state.copy(eventSeenInInterval = false))
-  //  [error]              ^
   protected def onRecoveryTick(state: RecoveringState[S], snapshot: Boolean): Behavior[InternalProtocol] =
     if (!snapshot) {
       if (state.eventSeenInInterval) {

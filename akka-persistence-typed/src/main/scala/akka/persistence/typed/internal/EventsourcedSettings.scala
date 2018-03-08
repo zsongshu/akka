@@ -9,6 +9,7 @@ import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
 import akka.event.Logging
 import akka.event.Logging.LogLevel
+import akka.persistence.Persistence
 import com.typesafe.config.Config
 
 import scala.concurrent.duration._
@@ -22,8 +23,8 @@ trait EventsourcedSettings {
   def snapshotPluginId: String
   def recoveryEventTimeout: FiniteDuration
 
-  def withJournalPluginId(id: Option[String]): EventsourcedSettings
-  def withSnapshotPluginId(id: Option[String]): EventsourcedSettings
+  def withJournalPluginId(id: String): EventsourcedSettings
+  def withSnapshotPluginId(id: String): EventsourcedSettings
 }
 
 object EventsourcedSettings {
@@ -47,37 +48,45 @@ object EventsourcedSettings {
       case l             ⇒ Logging.levelFor(l).getOrElse(Logging.OffLevel)
     }
 
-    // FIXME this is wrong I think
-    val recoveryEventTimeout = 10.seconds // untypedConfig.getDuration("plugin-journal-fallback.recovery-event-timeout", TimeUnit.MILLISECONDS).millis
-
     EventsourcedSettingsImpl(
+      config,
       stashCapacity = stashCapacity,
       internalStashOverflowStrategy,
       stashingLogLevel = stashingLogLevel,
       journalPluginId = "",
-      snapshotPluginId = "",
-      recoveryEventTimeout = recoveryEventTimeout
+      snapshotPluginId = ""
     )
   }
+
+  /**
+   * INTERNAL API
+   */
+  private[akka] final def journalConfigFor(config: Config, journalPluginId: String): Config = {
+    val defaultJournalPluginId = config.getString("akka.persistence.journal.plugin")
+    val configPath = if (journalPluginId == "") defaultJournalPluginId else journalPluginId
+    config.getConfig(configPath)
+      .withFallback(config.getConfig(Persistence.JournalFallbackConfigPath))
+  }
+
 }
 
 @InternalApi
 private[persistence] final case class EventsourcedSettingsImpl(
+  private val config:        Config,
   stashCapacity:             Int,
   stashOverflowStrategyName: String,
   stashingLogLevel:          LogLevel,
   journalPluginId:           String,
-  snapshotPluginId:          String,
-  recoveryEventTimeout:      FiniteDuration
+  snapshotPluginId:          String
 ) extends EventsourcedSettings {
 
-  def withJournalPluginId(id: Option[String]): EventsourcedSettings = id match {
-    case Some(identifier) ⇒ copy(journalPluginId = identifier)
-    case _                ⇒ this
-  }
-  def withSnapshotPluginId(id: Option[String]): EventsourcedSettings = id match {
-    case Some(identifier) ⇒ copy(snapshotPluginId = identifier)
-    case _                ⇒ this
-  }
+  def withJournalPluginId(id: String): EventsourcedSettings =
+    copy(journalPluginId = id)
+  def withSnapshotPluginId(id: String): EventsourcedSettings =
+    copy(snapshotPluginId = id)
+
+  private val journalConfig = EventsourcedSettings.journalConfigFor(config, journalPluginId)
+  val recoveryEventTimeout = journalConfig.getDuration("recovery-event-timeout", TimeUnit.MILLISECONDS).millis
+
 }
 

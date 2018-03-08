@@ -3,35 +3,30 @@
  */
 package akka.persistence.typed.internal
 
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.{ ActorContext, Behaviors }
+import akka.actor.ActorRef
 import akka.annotation.InternalApi
-import akka.persistence.Eventsourced.StashingHandlerInvocation
 import akka.persistence.JournalProtocol.ReplayMessages
-import akka.persistence._
 import akka.persistence.SnapshotProtocol.LoadSnapshot
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol
+import akka.persistence._
 
 import scala.collection.immutable
 
 @InternalApi
 private[akka] trait EventsourcedJournalInteractions[C, E, S] {
-  import akka.actor.typed.scaladsl.adapter._
 
   def setup: EventsourcedSetup[C, E, S]
 
-  private def context = setup.context
+  type EventOrTagged = Any // `Any` since can be `E` or `Tagged`
 
   // ---------- journal interactions ---------
 
   protected def returnRecoveryPermitOnlyOnFailure(cause: Throwable): Unit = {
-    setup.log.debug("Returning recovery permit, on failure because: " + cause.getMessage)
+    setup.log.debug("Returning recovery permit, on failure because: {}", cause.getMessage)
     // IMPORTANT to use selfUntyped, and not an adapter, since recovery permitter watches/unwatches those refs (and adapters are new refs)
     val permitter = setup.persistence.recoveryPermitter
     permitter.tell(RecoveryPermitter.ReturnRecoveryPermit, setup.selfUntyped)
   }
 
-  type EventOrTagged = Any // `Any` since can be `E` or `Tagged`
   protected def internalPersist(
     state: EventsourcedRunning.EventsourcedState[S],
     event: EventOrTagged): EventsourcedRunning.EventsourcedState[S] = {
@@ -57,16 +52,18 @@ private[akka] trait EventsourcedJournalInteractions[C, E, S] {
     events: immutable.Seq[EventOrTagged],
     state:  EventsourcedRunning.EventsourcedState[S]): EventsourcedRunning.EventsourcedState[S] = {
     if (events.nonEmpty) {
-      val newState = state.nextSequenceNr()
+      var newState = state
 
-      val senderNotKnownBecauseAkkaTyped = null
-      val write = AtomicWrite(events.map(event ⇒ PersistentRepr(
-        event,
-        persistenceId = setup.persistenceId,
-        sequenceNr = newState.seqNr, // FIXME increment for each event
-        writerUuid = setup.writerIdentity.writerUuid,
-        sender = senderNotKnownBecauseAkkaTyped)
-      ))
+      val writes = events.map { event ⇒
+        newState = newState.nextSequenceNr()
+        PersistentRepr(
+          event,
+          persistenceId = setup.persistenceId,
+          sequenceNr = newState.seqNr,
+          writerUuid = setup.writerIdentity.writerUuid,
+          sender = ActorRef.noSender)
+      }
+      val write = AtomicWrite(writes)
 
       setup.journal.tell(JournalProtocol.WriteMessages(write :: Nil, setup.selfUntyped, setup.writerIdentity.instanceId), setup.selfUntyped)
 

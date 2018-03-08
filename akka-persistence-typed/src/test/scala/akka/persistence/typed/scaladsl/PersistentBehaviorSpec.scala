@@ -38,7 +38,7 @@ object PersistentBehaviorSpec {
 
   val config = ConfigFactory.parseString(
     s"""
-    akka.loglevel = DEBUG
+    akka.loglevel = INFO
     # akka.persistence.typed.log-stashing = INFO
 
     akka.persistence.snapshot-store.inmem.class = "akka.persistence.typed.scaladsl.PersistentBehaviorSpec$$InMemorySnapshotStore"
@@ -319,7 +319,11 @@ class PersistentBehaviorSpec extends ActorTestKit with TypedAkkaSpecWithShutdown
     }
 
     "snapshot via predicate" in {
-      val alwaysSnapshot = counter("c9").snapshotWhen { (_, _, _) ⇒ true }
+      val alwaysSnapshot: Behavior[Command] =
+        Behaviors.setup { context ⇒
+          counter("c9").snapshotWhen { (_, _, _) ⇒ true }
+        }
+
       val c = spawn(alwaysSnapshot)
       val watchProbe = watcher(c)
       val replyProbe = TestProbe[State]()

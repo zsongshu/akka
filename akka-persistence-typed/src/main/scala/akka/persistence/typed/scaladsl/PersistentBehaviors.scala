@@ -6,9 +6,9 @@ package akka.persistence.typed.scaladsl
 import akka.actor.typed
 import akka.actor.typed.Behavior
 import akka.actor.typed.Behavior.DeferredBehavior
-import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, TimerScheduler }
+import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, StashBuffer, TimerScheduler }
 import akka.annotation.InternalApi
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol
+import akka.persistence.typed.internal.EventsourcedBehavior.{ InternalProtocol, WriterIdentity }
 import akka.persistence.typed.internal._
 import akka.persistence._
 import akka.util.ConstantFun
@@ -135,22 +135,30 @@ private[akka] final case class PersistentBehaviorImpl[Command, Event, State](
   override def apply(context: typed.ActorContext[Command]): Behavior[Command] = {
     Behaviors.setup[EventsourcedBehavior.InternalProtocol] { ctx ⇒
       Behaviors.withTimers[EventsourcedBehavior.InternalProtocol] { timers ⇒
+        val settings = EventsourcedSettings(ctx.system)
         val setup = EventsourcedSetup(
           ctx,
           timers,
           persistenceId,
           initialState,
           commandHandler,
-          eventHandler)
-          .withJournalPluginId(journalPluginId)
-          .withSnapshotPluginId(snapshotPluginId)
+          eventHandler,
+          WriterIdentity.newIdentity(),
+          recoveryCompleted,
+          tagger,
+          snapshotWhen,
+          recovery,
+          settings,
+          StashBuffer(settings.stashCapacity)
+        ).withJournalPluginId(journalPluginId.getOrElse(""))
+          .withSnapshotPluginId(snapshotPluginId.getOrElse(""))
 
         EventsourcedRequestingRecoveryPermit(setup)
       }
     }.widen[Any] {
       case res: JournalProtocol.Response           ⇒ InternalProtocol.JournalResponse(res)
-      case RecoveryPermitter.RecoveryPermitGranted ⇒ InternalProtocol.RecoveryPermitGranted
       case res: SnapshotProtocol.Response          ⇒ InternalProtocol.SnapshotterResponse(res)
+      case RecoveryPermitter.RecoveryPermitGranted ⇒ InternalProtocol.RecoveryPermitGranted
       case cmd: Command @unchecked                 ⇒ InternalProtocol.IncomingCommand(cmd)
     }.narrow[Command]
   }
@@ -169,7 +177,7 @@ private[akka] final case class PersistentBehaviorImpl[Command, Event, State](
    *
    * `predicate` receives the State, Event and the sequenceNr used for the Event
    */
-  def snapshotWhen(predicate: (State, Event, Long) ⇒ Boolean): PersistentBehavior[Command, Event, State] =
+  def snapshotWhen(predicate: (State, Event, Long) ⇒ Boolean): PersistentBehavior[Command, Event, State] = 
     copy(snapshotWhen = predicate)
 
   /**

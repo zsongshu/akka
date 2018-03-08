@@ -13,56 +13,6 @@ import akka.persistence.typed.scaladsl.PersistentBehaviors
 import akka.persistence._
 import akka.util.ConstantFun
 
-@InternalApi
-private[persistence] object EventsourcedSetup {
-
-  def apply[Command, Event, State](
-    context: ActorContext[InternalProtocol],
-    timers:  TimerScheduler[InternalProtocol],
-
-    persistenceId:  String,
-    initialState:   State,
-    commandHandler: PersistentBehaviors.CommandHandler[Command, Event, State],
-    eventHandler:   (State, Event) ⇒ State): EventsourcedSetup[Command, Event, State] = {
-    apply(
-      context,
-      timers,
-      persistenceId,
-      initialState,
-      commandHandler,
-      eventHandler,
-      // values dependent on context
-      EventsourcedSettings(context.system))
-  }
-
-  def apply[Command, Event, State](
-    context: ActorContext[InternalProtocol],
-    timers:  TimerScheduler[InternalProtocol],
-
-    persistenceId:  String,
-    initialState:   State,
-    commandHandler: PersistentBehaviors.CommandHandler[Command, Event, State],
-    eventHandler:   (State, Event) ⇒ State,
-    settings:       EventsourcedSettings): EventsourcedSetup[Command, Event, State] = {
-    new EventsourcedSetup[Command, Event, State](
-      context,
-      timers,
-
-      persistenceId,
-      initialState,
-      commandHandler,
-      eventHandler,
-      writerIdentity = WriterIdentity.newIdentity(),
-      recoveryCompleted = ConstantFun.scalaAnyTwoToUnit,
-      tagger = (_: Event) ⇒ Set.empty[String],
-      snapshotWhen = ConstantFun.scalaAnyThreeToFalse,
-      recovery = Recovery(),
-      settings,
-      StashBuffer(settings.stashCapacity)
-    )
-  }
-}
-
 /** INTERNAL API: Carry state for the Persistent behavior implementation behaviors */
 @InternalApi
 private[persistence] final case class EventsourcedSetup[Command, Event, State](
@@ -86,12 +36,12 @@ private[persistence] final case class EventsourcedSetup[Command, Event, State](
 ) {
   import akka.actor.typed.scaladsl.adapter._
 
-  def withJournalPluginId(id: Option[String]): EventsourcedSetup[Command, Event, State] = {
+  def withJournalPluginId(id: String): EventsourcedSetup[Command, Event, State] = {
     require(id != null, "journal plugin id must not be null; use empty string for 'default' journal")
     copy(settings = settings.withJournalPluginId(id))
   }
 
-  def withSnapshotPluginId(id: Option[String]): EventsourcedSetup[Command, Event, State] = {
+  def withSnapshotPluginId(id: String): EventsourcedSetup[Command, Event, State] = {
     require(id != null, "snapshot plugin id must not be null; use empty string for 'default' snapshot store")
     copy(settings = settings.withSnapshotPluginId(id))
   }

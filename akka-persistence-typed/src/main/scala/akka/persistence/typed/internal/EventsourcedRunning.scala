@@ -60,14 +60,19 @@ import scala.collection.immutable
 
 // ===============================================
 
-@InternalApi private[akka] class EventsourcedRunning[C, E, S](override val setup: EventsourcedSetup[C, E, S])
+/** INTERNAL API */
+@InternalApi private[akka] class EventsourcedRunning[C, E, S](
+  override val setup: EventsourcedSetup[C, E, S])
   extends EventsourcedJournalInteractions[C, E, S] with EventsourcedStashManagement[C, E, S] {
   import EventsourcedRunning.EventsourcedState
+
+  private def log = setup.log
+  private def commandContext = setup.commandContext
 
   def handlingCommands(state: EventsourcedState[S]): Behavior[InternalProtocol] = {
 
     def onCommand(state: EventsourcedState[S], cmd: C): Behavior[InternalProtocol] = {
-      val effect = setup.commandHandler(setup.commandContext, state.state, cmd)
+      val effect = setup.commandHandler(commandContext, state.state, cmd)
       applyEffects(cmd, state, effect.asInstanceOf[EffectImpl[E, S]]) // TODO can we avoid the cast?
     }
 
@@ -77,8 +82,6 @@ import scala.collection.immutable
       effect:      EffectImpl[E, S],
       sideEffects: immutable.Seq[ChainableEffect[_, S]] = Nil
     ): Behavior[InternalProtocol] = {
-      import setup.log
-
       if (log.isDebugEnabled)
         log.debug(s"Handled command [{}], resulting effect: [{}], side effects: [{}]", msg.getClass.getName, effect, sideEffects.size)
 
@@ -160,9 +163,9 @@ import scala.collection.immutable
 
     withMdc("run-cmnds") {
       Behaviors.immutable[EventsourcedBehavior.InternalProtocol] {
+        case (_, IncomingCommand(c: C @unchecked)) ⇒ onCommand(state, c)
         case (_, SnapshotterResponse(r))           ⇒ Behaviors.unhandled
         case (_, JournalResponse(r))               ⇒ Behaviors.unhandled
-        case (_, IncomingCommand(c: C @unchecked)) ⇒ onCommand(state, c)
       }
     }
 
@@ -176,7 +179,7 @@ import scala.collection.immutable
     sideEffects:        immutable.Seq[ChainableEffect[_, S]]
   ): Behavior[InternalProtocol] = {
     withMdc("run-persist-evnts") {
-      Behaviors.mutable[EventsourcedBehavior.InternalProtocol](_ ⇒ new PersistingEvents(state, pendingInvocations, sideEffects))
+      new PersistingEvents(state, pendingInvocations, sideEffects)
     }
   }
 
