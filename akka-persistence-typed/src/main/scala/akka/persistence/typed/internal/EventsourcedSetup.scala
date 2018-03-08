@@ -13,19 +13,19 @@ import akka.{ actor ⇒ a }
 
 /** INTERNAL API: Carry state for the Persistent behavior implementation behaviors */
 @InternalApi
-private[persistence] final case class EventsourcedSetup[Command, Event, State](
+private[persistence] final case class EventsourcedSetup[C, E, S](
   context: ActorContext[InternalProtocol],
   timers:  TimerScheduler[InternalProtocol],
 
   persistenceId:  String,
-  initialState:   State,
-  commandHandler: PersistentBehaviors.CommandHandler[Command, Event, State],
+  initialState:   S,
+  commandHandler: PersistentBehaviors.CommandHandler[C, E, S],
 
-  eventHandler:      (State, Event) ⇒ State,
+  eventHandler:      (S, E) ⇒ S,
   writerIdentity:    WriterIdentity,
-  recoveryCompleted: (ActorContext[Command], State) ⇒ Unit,
-  tagger:            Event ⇒ Set[String],
-  snapshotWhen:      (State, Event, Long) ⇒ Boolean,
+  recoveryCompleted: (ActorContext[C], S) ⇒ Unit,
+  tagger:            E ⇒ Set[String],
+  snapshotWhen:      (S, E, Long) ⇒ Boolean,
   recovery:          Recovery,
 
   settings: EventsourcedSettings,
@@ -34,17 +34,17 @@ private[persistence] final case class EventsourcedSetup[Command, Event, State](
 ) {
   import akka.actor.typed.scaladsl.adapter._
 
-  def withJournalPluginId(id: String): EventsourcedSetup[Command, Event, State] = {
+  def withJournalPluginId(id: String): EventsourcedSetup[C, E, S] = {
     require(id != null, "journal plugin id must not be null; use empty string for 'default' journal")
     copy(settings = settings.withJournalPluginId(id))
   }
 
-  def withSnapshotPluginId(id: String): EventsourcedSetup[Command, Event, State] = {
+  def withSnapshotPluginId(id: String): EventsourcedSetup[C, E, S] = {
     require(id != null, "snapshot plugin id must not be null; use empty string for 'default' snapshot store")
     copy(settings = settings.withSnapshotPluginId(id))
   }
 
-  def commandContext: ActorContext[Command] = context.asInstanceOf[ActorContext[Command]]
+  def commandContext: ActorContext[C] = context.asInstanceOf[ActorContext[C]]
 
   def log = context.log
 
@@ -60,7 +60,7 @@ private[persistence] final case class EventsourcedSetup[Command, Event, State](
     case res: JournalProtocol.Response           ⇒ InternalProtocol.JournalResponse(res)
     case RecoveryPermitter.RecoveryPermitGranted ⇒ InternalProtocol.RecoveryPermitGranted
     case res: SnapshotProtocol.Response          ⇒ InternalProtocol.SnapshotterResponse(res)
-    case cmd: Command @unchecked                 ⇒ InternalProtocol.IncomingCommand(cmd)
+    case cmd: C @unchecked                 ⇒ InternalProtocol.IncomingCommand(cmd)
   }.toUntyped
 
 }
