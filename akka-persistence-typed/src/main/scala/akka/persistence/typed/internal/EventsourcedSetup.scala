@@ -4,14 +4,12 @@
 package akka.persistence.typed.internal
 
 import akka.actor.ActorRef
-import akka.{ actor ⇒ a }
 import akka.actor.typed.scaladsl.{ ActorContext, StashBuffer, TimerScheduler }
 import akka.annotation.InternalApi
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol.RecoveryPermitGranted
+import akka.persistence._
 import akka.persistence.typed.internal.EventsourcedBehavior.{ InternalProtocol, WriterIdentity }
 import akka.persistence.typed.scaladsl.PersistentBehaviors
-import akka.persistence._
-import akka.util.ConstantFun
+import akka.{ actor ⇒ a }
 
 /** INTERNAL API: Carry state for the Persistent behavior implementation behaviors */
 @InternalApi

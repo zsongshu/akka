@@ -3,13 +3,14 @@
  */
 package akka.persistence.typed.internal
 
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.{ Behaviors, TimerScheduler }
+import akka.actor.typed.{ActorContext, Behavior}
+import akka.actor.typed.Behavior.DeferredBehavior
+import akka.actor.typed.scaladsl.{Behaviors, TimerScheduler}
 import akka.annotation.InternalApi
 import akka.event.Logging
 import akka.persistence.JournalProtocol._
 import akka.persistence._
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol.{ IncomingCommand, JournalResponse, RecoveryTickEvent, SnapshotterResponse }
+import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol._
 import akka.persistence.typed.internal.EventsourcedBehavior._
 
 import scala.concurrent.duration.FiniteDuration
@@ -19,7 +20,6 @@ import scala.util.control.NonFatal
  * INTERNAL API
  *
  * See next behavior [[EventsourcedRunning]].
- *
  */
 @InternalApi
 private[persistence] object EventsourcedRecoveringEvents {
@@ -40,8 +40,7 @@ private[persistence] object EventsourcedRecoveringEvents {
 }
 
 @InternalApi
-private[persistence] class EventsourcedRecoveringEvents[C, E, S](
-  override val setup: EventsourcedSetup[C, E, S])
+private[persistence] class EventsourcedRecoveringEvents[C, E, S](override val setup: EventsourcedSetup[C, E, S])
   extends EventsourcedJournalInteractions[C, E, S] with EventsourcedStashManagement[C, E, S] {
   import EventsourcedRecoveringEvents.RecoveringState
 
@@ -58,9 +57,7 @@ private[persistence] class EventsourcedRecoveringEvents[C, E, S](
 
   }
 
-  private def stay(
-    state: RecoveringState[S]
-  ): Behavior[InternalProtocol] =
+  private def stay(state: RecoveringState[S]): Behavior[InternalProtocol] =
     Behaviors.immutable {
       case (_, JournalResponse(r))       ⇒ onJournalResponse(state, r)
       case (_, SnapshotterResponse(r))   ⇒ onSnapshotterResponse(r)

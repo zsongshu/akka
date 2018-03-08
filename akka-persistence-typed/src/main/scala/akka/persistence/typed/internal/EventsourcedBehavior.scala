@@ -7,15 +7,7 @@ package akka.persistence.typed.internal
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
-import akka.actor.NoSerializationVerificationNeeded
-import akka.actor.typed.Behavior
-import akka.actor.typed.Behavior.StoppedBehavior
-import akka.actor.typed.scaladsl.{ ActorContext, TimerScheduler }
 import akka.annotation.InternalApi
-import akka.event.{ LogSource, Logging }
-import akka.persistence.typed.scaladsl.PersistentBehaviors
-import akka.persistence.{ JournalProtocol, Persistence, RecoveryPermitter, SnapshotProtocol }
-import akka.{ actor ⇒ a }
 
 /** INTERNAL API */
 @InternalApi

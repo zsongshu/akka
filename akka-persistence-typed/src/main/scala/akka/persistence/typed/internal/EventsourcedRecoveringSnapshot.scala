@@ -76,16 +76,13 @@ private[akka] class EventsourcedRecoveringSnapshot[C, E, S](
   private def onRecoveryFailure(cause: Throwable, event: Option[Any]): Behavior[InternalProtocol] = {
     cancelRecoveryTimer(setup.timers)
 
-    val lastSequenceNr = 0 // FIXME not needed since snapshot == 0
     event match {
       case Some(evt) ⇒
-        setup.log.error(cause, "Exception in receiveRecover when replaying event type [{}] with sequence number [{}] for " +
-          "persistenceId [{}].", evt.getClass.getName, lastSequenceNr, setup.persistenceId)
+        setup.log.error(cause, "Exception in receiveRecover when replaying snapshot [{}]", evt.getClass.getName)
         Behaviors.stopped
 
       case None ⇒
-        setup.log.error(cause, "Persistence failure when replaying events for persistenceId [{}]. " +
-          "Last known sequence number [{}]", setup.persistenceId, lastSequenceNr)
+        setup.log.error(cause, "Persistence failure when replaying snapshot")
         Behaviors.stopped
     }
   }

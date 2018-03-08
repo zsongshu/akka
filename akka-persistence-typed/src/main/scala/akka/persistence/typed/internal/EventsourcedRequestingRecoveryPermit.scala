@@ -4,12 +4,10 @@
 package akka.persistence.typed.internal
 
 import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.Behaviors.MutableBehavior
-import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, StashBuffer, TimerScheduler }
+import akka.actor.typed.scaladsl.Behaviors
 import akka.annotation.InternalApi
-import akka.event.Logging
 import akka.persistence._
-import akka.persistence.typed.internal.EventsourcedBehavior.{ InternalProtocol, WriterIdentity }
+import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol
 
 /**
  * INTERNAL API
@@ -68,7 +66,6 @@ private[akka] class EventsourcedRequestingRecoveryPermit[C, E, S](
   // ---------- journal interactions ---------
 
   private def requestRecoveryPermit(): Unit = {
-    import akka.actor.typed.scaladsl.adapter._
     // IMPORTANT to use selfUntyped, and not an adapter, since recovery permitter watches/unwatches those refs (and adapters are new refs)
     setup.persistence.recoveryPermitter.tell(RecoveryPermitter.RequestRecoveryPermit, setup.selfUntyped)
   }

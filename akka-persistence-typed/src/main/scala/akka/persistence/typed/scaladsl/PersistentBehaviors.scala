@@ -177,7 +177,7 @@ private[akka] final case class PersistentBehaviorImpl[Command, Event, State](
    *
    * `predicate` receives the State, Event and the sequenceNr used for the Event
    */
-  def snapshotWhen(predicate: (State, Event, Long) ⇒ Boolean): PersistentBehavior[Command, Event, State] = 
+  def snapshotWhen(predicate: (State, Event, Long) ⇒ Boolean): PersistentBehavior[Command, Event, State] =
     copy(snapshotWhen = predicate)
 
   /**

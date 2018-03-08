@@ -1,7 +1,7 @@
 package akka.persistence.typed.internal
 
 import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.{ ActorContext, StashBuffer }
+import akka.actor.typed.scaladsl.StashBuffer
 import akka.actor.{ DeadLetter, StashOverflowException }
 import akka.annotation.InternalApi
 import akka.event.Logging
