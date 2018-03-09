@@ -3,11 +3,9 @@
  */
 package akka.persistence.typed.scaladsl
 
-import akka.actor.ActorSystemImpl
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ ActorRef, ActorSystem, Behavior, SupervisorStrategy, Terminated, TypedAkkaSpecWithShutdown }
 import akka.persistence.snapshot.SnapshotStore
-import akka.persistence.typed.scaladsl.PersistentBehaviors._
 import akka.persistence.{ SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria }
 import akka.testkit.typed.TestKitSettings
 import akka.testkit.typed.scaladsl._

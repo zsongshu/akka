@@ -3,18 +3,17 @@
  */
 package akka.persistence.typed.internal
 
-import akka.actor.typed.Behavior
+import akka.actor.typed.{ Behavior, Signal }
 import akka.actor.typed.Behavior.StoppedBehavior
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.Behaviors.MutableBehavior
-import akka.actor.typed.scaladsl.{ ActorContext, Behaviors, StashBuffer, TimerScheduler }
 import akka.annotation.InternalApi
-import akka.event.Logging
 import akka.persistence.Eventsourced.{ PendingHandlerInvocation, StashingHandlerInvocation }
 import akka.persistence.JournalProtocol._
 import akka.persistence._
 import akka.persistence.journal.Tagged
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol
-import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol.{ IncomingCommand, JournalResponse, RecoveryTickEvent, SnapshotterResponse }
+import akka.persistence.typed.internal.EventsourcedBehavior.{ InternalProtocol, MDC }
+import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol.{ IncomingCommand, JournalResponse, SnapshotterResponse }
 
 import scala.annotation.tailrec
 import scala.collection.immutable
@@ -22,20 +21,22 @@ import scala.collection.immutable
 /**
  * INTERNAL API
  *
- * Fourth (of four) -- also known as 'final' or 'ultimate' -- form of PersistentBehavior.
+ * Conceptually fourth (of four) -- also known as 'final' or 'ultimate' -- form of PersistentBehavior.
  *
  * In this phase recovery has completed successfully and we continue handling incoming commands,
  * as well as persisting new events as dictated by the user handlers.
  *
- * This behavior operates in two phases:
+ * This behavior operates in two phases (also behaviors):
  * - HandlingCommands - where the command handler is invoked for incoming commands
  * - PersistingEvents - where incoming commands are stashed until persistence completes
  *
  * This is implemented as such to avoid creating many EventsourcedRunning instances,
  * which perform the Persistence extension lookup on creation and similar things (config lookup)
  *
+ * See previous [[EventsourcedRecoveringEvents]].
  */
-@InternalApi private[akka] object EventsourcedRunning {
+@InternalApi
+private[akka] object EventsourcedRunning {
 
   final case class EventsourcedState[State](
     seqNr: Long,
@@ -65,6 +66,8 @@ import scala.collection.immutable
   override val setup: EventsourcedSetup[C, E, S])
   extends EventsourcedJournalInteractions[C, E, S] with EventsourcedStashManagement[C, E, S] {
   import EventsourcedRunning.EventsourcedState
+
+  import EventsourcedBehavior.withMdc
 
   private def log = setup.log
   private def commandContext = setup.commandContext
@@ -161,12 +164,12 @@ import scala.collection.immutable
       if (tags.isEmpty) event else Tagged(event, tags)
     }
 
-    withMdc("run-cmnds") {
+    withMdc(setup, MDC.RunningCmds) {
       Behaviors.immutable[EventsourcedBehavior.InternalProtocol] {
         case (_, IncomingCommand(c: C @unchecked)) ⇒ onCommand(state, c)
-        case (_, SnapshotterResponse(r))           ⇒ Behaviors.unhandled
-        case (_, JournalResponse(r))               ⇒ Behaviors.unhandled
-      }
+        case (_, SnapshotterResponse(_))           ⇒ Behaviors.unhandled
+        case (_, JournalResponse(_))               ⇒ Behaviors.unhandled
+      }.onSignal(returnPermitOnStop)
     }
 
   }
@@ -178,7 +181,7 @@ import scala.collection.immutable
     pendingInvocations: immutable.Seq[PendingHandlerInvocation],
     sideEffects:        immutable.Seq[ChainableEffect[_, S]]
   ): Behavior[InternalProtocol] = {
-    withMdc("run-persist-evnts") {
+    withMdc(setup, MDC.PersistingEvents) {
       new PersistingEvents(state, pendingInvocations, sideEffects)
     }
   }
@@ -197,6 +200,9 @@ import scala.collection.immutable
       }
     }
 
+    override def onSignal: PartialFunction[Signal, Behavior[InternalProtocol]] =
+      { case signal ⇒ returnPermitOnStop((setup.context, signal)) }
+
     def onCommand(cmd: IncomingCommand[C]): Behavior[InternalProtocol] = {
       stash(cmd)
       this
@@ -207,8 +213,6 @@ import scala.collection.immutable
       setup.log.debug("Received Journal response: {}", response)
       response match {
         case WriteMessageSuccess(p, id) ⇒
-          // instanceId mismatch can happen for persistAsync and defer in case of actor restart
-          // while message is in flight, in that case we ignore the call to the handler
           if (id == setup.writerIdentity.instanceId) {
             state = state.updateLastSequenceNr(p)
             // FIXME is the order of pendingInvocations not reversed?
@@ -221,8 +225,6 @@ import scala.collection.immutable
           } else this
 
         case WriteMessageRejected(p, cause, id) ⇒
-          // instanceId mismatch can happen for persistAsync and defer in case of actor restart
-          // while message is in flight, in that case the handler has already been discarded
           if (id == setup.writerIdentity.instanceId) {
             state = state.updateLastSequenceNr(p)
             onPersistRejected(cause, p.payload, p.sequenceNr) // does not stop (by design)
@@ -230,10 +232,7 @@ import scala.collection.immutable
           } else this
 
         case WriteMessageFailure(p, cause, id) ⇒
-          // instanceId mismatch can happen for persistAsync and defer in case of actor restart
-          // while message is in flight, in that case the handler has already been discarded
           if (id == setup.writerIdentity.instanceId) {
-            // onWriteMessageComplete() -> tryBecomeHandlingCommands
             onPersistFailureThenStop(cause, p.payload, p.sequenceNr)
           } else this
 
@@ -250,9 +249,6 @@ import scala.collection.immutable
           Behaviors.unhandled
       }
     }
-
-    //    private def onWriteMessageComplete(): Unit =
-    //      tryBecomeHandlingCommands()
 
     private def onPersistRejected(cause: Throwable, event: Any, seqNr: Long): Unit = {
       setup.log.error(
@@ -272,10 +268,10 @@ import scala.collection.immutable
     private def onSnapshotterResponse(response: SnapshotProtocol.Response): Behavior[InternalProtocol] = {
       response match {
         case SaveSnapshotSuccess(meta) ⇒
-          setup.context.log.debug("Save snapshot successful: " + meta)
+          setup.context.log.debug("Save snapshot successful, snapshot metadata: [{}]", meta)
           this
         case SaveSnapshotFailure(meta, ex) ⇒
-          setup.context.log.error(ex, "Save snapshot failed! " + meta)
+          setup.context.log.error(ex, "Save snapshot failed, snapshot metadata: [{}]", meta)
           this // FIXME https://github.com/akka/akka/issues/24637 should we provide callback for this? to allow Stop
       }
     }
@@ -283,15 +279,6 @@ import scala.collection.immutable
   }
 
   // --------------------------
-
-  private def withMdc(phase: String)(wrapped: Behavior[InternalProtocol]) = {
-    val mdc = Map(
-      "persistenceId" → setup.persistenceId,
-      "phase" → phase
-    )
-
-    Behaviors.withMdc((_: Any) ⇒ mdc, wrapped)
-  }
 
   def applySideEffects(effects: immutable.Seq[ChainableEffect[_, S]], state: EventsourcedState[S]): Behavior[InternalProtocol] = {
     var res: Behavior[InternalProtocol] = handlingCommands(state)
@@ -301,10 +288,8 @@ import scala.collection.immutable
     // manual loop implementation to avoid allocations and multiple scans
     while (it.hasNext) {
       val effect = it.next()
-      applySideEffect(effect, state) match {
-        case _: StoppedBehavior[_] ⇒ res = Behaviors.stopped
-        case _                     ⇒ // nothing to do
-      }
+      val stopped = !Behavior.isAlive(applySideEffect(effect, state))
+      if (stopped) res = Behaviors.stopped
     }
 
     res

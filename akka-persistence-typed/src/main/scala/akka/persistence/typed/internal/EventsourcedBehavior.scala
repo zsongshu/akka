@@ -7,6 +7,8 @@ package akka.persistence.typed.internal
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
 import akka.annotation.InternalApi
 
 /** INTERNAL API */
@@ -25,6 +27,24 @@ private[akka] object EventsourcedBehavior {
   }
   final case class WriterIdentity(instanceId: Int, writerUuid: String)
 
+  object MDC {
+    // format: OFF
+    val AwaitingPermit        = "await-permit"
+    val RecoveringSnapshot    = "recover-snap"
+    val RecoveringEvents      = "recover-evts"
+    val RunningCmds           = "running-cmnds"
+    val PersistingEvents      = "persist-evts"
+    // format: ON
+  }
+
+  def withMdc(setup: EventsourcedSetup[_, _, _], phaseName: String)(b: Behavior[InternalProtocol]): Behavior[InternalProtocol] = {
+    val mdc = Map(
+      "persistenceId" → setup.persistenceId,
+      "phase" → phaseName
+    )
+    Behaviors.withMdc(_ ⇒ mdc, b)
+  }
+
   /** Protocol used internally by the eventsourced behaviors, never exposed to user-land */
   sealed trait InternalProtocol
   object InternalProtocol {
@@ -32,7 +52,6 @@ private[akka] object EventsourcedBehavior {
     final case class JournalResponse(msg: akka.persistence.JournalProtocol.Response) extends InternalProtocol
     final case class SnapshotterResponse(msg: akka.persistence.SnapshotProtocol.Response) extends InternalProtocol
     final case class RecoveryTickEvent(snapshot: Boolean) extends InternalProtocol
-    final case class ReceiveTimeout(timeout: akka.actor.ReceiveTimeout) extends InternalProtocol
     final case class IncomingCommand[C](c: C) extends InternalProtocol
   }
 }

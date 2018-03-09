@@ -7,23 +7,24 @@ import java.util.concurrent.TimeUnit
 
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
-import akka.event.Logging
-import akka.event.Logging.LogLevel
 import akka.persistence.Persistence
 import com.typesafe.config.Config
 
 import scala.concurrent.duration._
 
-trait EventsourcedSettings {
+/** INTERNAL API */
+@InternalApi
+private[akka] trait EventsourcedSettings {
 
   def stashCapacity: Int
-  // def stashOverflowStrategyName: String // TODO not supported, the stash just throws for now
-  def stashingLogLevel: LogLevel
-  def journalPluginId: String
-  def snapshotPluginId: String
+  def logOnStashing: Boolean
+  def stashOverflowStrategyConfigurator: String
+
   def recoveryEventTimeout: FiniteDuration
 
+  def journalPluginId: String
   def withJournalPluginId(id: String): EventsourcedSettings
+  def snapshotPluginId: String
   def withSnapshotPluginId(id: String): EventsourcedSettings
 }
 
@@ -34,25 +35,20 @@ object EventsourcedSettings {
 
   def apply(config: Config): EventsourcedSettings = {
     val typedConfig = config.getConfig("akka.persistence.typed")
-    val untypedConfig = config.getConfig("akka.persistence")
 
     // StashOverflowStrategy
-    val internalStashOverflowStrategy =
-      untypedConfig.getString("internal-stash-overflow-strategy") // FIXME or copy it to typed?
+    val stashOverflowStrategyConfigurator = typedConfig.getString("internal-stash-overflow-strategy")
 
     val stashCapacity = typedConfig.getInt("stash-capacity")
+    require(stashCapacity > 0, "stash-capacity MUST be > 0, unbounded buffering is not supported.")
 
-    val stashingLogLevel = typedConfig.getString("log-stashing") match {
-      case "off"         ⇒ Logging.OffLevel
-      case "on" | "true" ⇒ Logging.DebugLevel
-      case l             ⇒ Logging.levelFor(l).getOrElse(Logging.OffLevel)
-    }
+    val logOnStashing = typedConfig.getBoolean("log-stashing")
 
     EventsourcedSettingsImpl(
       config,
       stashCapacity = stashCapacity,
-      internalStashOverflowStrategy,
-      stashingLogLevel = stashingLogLevel,
+      stashOverflowStrategyConfigurator,
+      logOnStashing = logOnStashing,
       journalPluginId = "",
       snapshotPluginId = ""
     )
@@ -72,12 +68,12 @@ object EventsourcedSettings {
 
 @InternalApi
 private[persistence] final case class EventsourcedSettingsImpl(
-  private val config:        Config,
-  stashCapacity:             Int,
-  stashOverflowStrategyName: String,
-  stashingLogLevel:          LogLevel,
-  journalPluginId:           String,
-  snapshotPluginId:          String
+  private val config:                Config,
+  stashCapacity:                     Int,
+  stashOverflowStrategyConfigurator: String,
+  logOnStashing:                     Boolean,
+  journalPluginId:                   String,
+  snapshotPluginId:                  String
 ) extends EventsourcedSettings {
 
   def withJournalPluginId(id: String): EventsourcedSettings =

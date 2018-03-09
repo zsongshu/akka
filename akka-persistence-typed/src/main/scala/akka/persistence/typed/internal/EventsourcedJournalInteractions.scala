@@ -4,13 +4,17 @@
 package akka.persistence.typed.internal
 
 import akka.actor.ActorRef
+import akka.actor.typed.{ Behavior, PostStop, PreRestart, Signal }
+import akka.actor.typed.scaladsl.{ ActorContext, Behaviors }
 import akka.annotation.InternalApi
 import akka.persistence.JournalProtocol.ReplayMessages
 import akka.persistence.SnapshotProtocol.LoadSnapshot
 import akka.persistence._
+import akka.persistence.typed.internal.EventsourcedBehavior.InternalProtocol
 
 import scala.collection.immutable
 
+/** INTERNAL API */
 @InternalApi
 private[akka] trait EventsourcedJournalInteractions[C, E, S] {
 
@@ -19,13 +23,6 @@ private[akka] trait EventsourcedJournalInteractions[C, E, S] {
   type EventOrTagged = Any // `Any` since can be `E` or `Tagged`
 
   // ---------- journal interactions ---------
-
-  protected def returnRecoveryPermitOnlyOnFailure(cause: Throwable): Unit = {
-    setup.log.debug("Returning recovery permit, on failure because: {}", cause.getMessage)
-    // IMPORTANT to use selfUntyped, and not an adapter, since recovery permitter watches/unwatches those refs (and adapters are new refs)
-    val permitter = setup.persistence.recoveryPermitter
-    permitter.tell(RecoveryPermitter.ReturnRecoveryPermit, setup.selfUntyped)
-  }
 
   protected def internalPersist(
     state: EventsourcedRunning.EventsourcedState[S],
@@ -42,8 +39,8 @@ private[akka] trait EventsourcedJournalInteractions[C, E, S] {
       sender = senderNotKnownBecauseAkkaTyped
     )
 
-    val eventBatch = AtomicWrite(repr) :: Nil // batching not used, since no persistAsync
-    setup.journal.tell(JournalProtocol.WriteMessages(eventBatch, setup.selfUntyped, setup.writerIdentity.instanceId), setup.selfUntyped)
+    val write = AtomicWrite(repr) :: Nil
+    setup.journal.tell(JournalProtocol.WriteMessages(write, setup.selfUntyped, setup.writerIdentity.instanceId), setup.selfUntyped)
 
     newState
   }
@@ -73,15 +70,40 @@ private[akka] trait EventsourcedJournalInteractions[C, E, S] {
 
   protected def replayEvents(fromSeqNr: Long, toSeqNr: Long): Unit = {
     setup.log.debug("Replaying messages: from: {}, to: {}", fromSeqNr, toSeqNr)
-    // reply is sent to `selfUntypedAdapted`, it is important to target that one
     setup.journal ! ReplayMessages(fromSeqNr, toSeqNr, setup.recovery.replayMax, setup.persistenceId, setup.selfUntyped)
   }
 
-  protected def returnRecoveryPermit(setup: EventsourcedSetup[_, _, _], reason: String): Unit = {
-    setup.log.debug("Returning recovery permit, reason: " + reason)
-    // IMPORTANT to use selfUntyped, and not an adapter, since recovery permitter watches/unwatches those refs (and adapters are new refs)
-    setup.persistence.recoveryPermitter.tell(RecoveryPermitter.ReturnRecoveryPermit, setup.selfUntyped)
+  protected def requestRecoveryPermit(): Unit = {
+    setup.persistence.recoveryPermitter.tell(RecoveryPermitter.RequestRecoveryPermit, setup.selfUntyped)
   }
+
+  /** Intended to be used in .onSignal(returnPermitOnStop) by behaviors */
+  protected def returnPermitOnStop: PartialFunction[(ActorContext[InternalProtocol], Signal), Behavior[InternalProtocol]] = {
+    case (_, PostStop) ⇒
+      tryReturnRecoveryPermit("PostStop")
+      Behaviors.stopped
+    case (_, PreRestart) ⇒
+      // TODO was not entirely sure if it's needed here as well
+      tryReturnRecoveryPermit("PostStop")
+      Behaviors.stopped
+  }
+
+  /** Mutates setup, by setting the `holdingRecoveryPermit` to false */
+  protected def tryReturnRecoveryPermit(reason: String): Unit = {
+    if (setup.holdingRecoveryPermit) {
+      setup.log.debug("Returning recovery permit, reason: " + reason)
+      setup.persistence.recoveryPermitter.tell(RecoveryPermitter.ReturnRecoveryPermit, setup.selfUntyped)
+      setup.holdingRecoveryPermit = false
+    } // else, no need to return the permit
+  }
+
+  protected def returnRecoveryPermitOnlyOnFailure(cause: Throwable): Unit =
+    if (setup.holdingRecoveryPermit) {
+      setup.log.debug("Returning recovery permit, on failure because: {}", cause.getMessage)
+      // IMPORTANT to use selfUntyped, and not an adapter, since recovery permitter watches/unwatches those refs (and adapters are new refs)
+      val permitter = setup.persistence.recoveryPermitter
+      permitter.tell(RecoveryPermitter.ReturnRecoveryPermit, setup.selfUntyped)
+    } else setup.log.info("Attempted return of recovery permit however was not holding a permit; ignoring") // TODO: make debug level once confident
 
   // ---------- snapshot store interactions ---------
 

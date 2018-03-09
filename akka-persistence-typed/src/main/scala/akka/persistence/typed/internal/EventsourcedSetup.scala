@@ -11,26 +11,25 @@ import akka.persistence.typed.internal.EventsourcedBehavior.{ InternalProtocol, 
 import akka.persistence.typed.scaladsl.PersistentBehaviors
 import akka.{ actor ⇒ a }
 
-/** INTERNAL API: Carry state for the Persistent behavior implementation behaviors */
+/**
+ * INTERNAL API: Carry state for the Persistent behavior implementation behaviors
+ */
 @InternalApi
 private[persistence] final case class EventsourcedSetup[C, E, S](
-  context: ActorContext[InternalProtocol],
-  timers:  TimerScheduler[InternalProtocol],
-
-  persistenceId:  String,
-  initialState:   S,
-  commandHandler: PersistentBehaviors.CommandHandler[C, E, S],
-
-  eventHandler:      (S, E) ⇒ S,
-  writerIdentity:    WriterIdentity,
-  recoveryCompleted: (ActorContext[C], S) ⇒ Unit,
-  tagger:            E ⇒ Set[String],
-  snapshotWhen:      (S, E, Long) ⇒ Boolean,
-  recovery:          Recovery,
-
-  settings: EventsourcedSettings,
-
-  internalStash: StashBuffer[InternalProtocol] // FIXME would be nice here... but stash is mutable :\\\\\\\
+  context:                   ActorContext[InternalProtocol],
+  timers:                    TimerScheduler[InternalProtocol],
+  persistenceId:             String,
+  initialState:              S,
+  commandHandler:            PersistentBehaviors.CommandHandler[C, E, S],
+  eventHandler:              (S, E) ⇒ S,
+  writerIdentity:            WriterIdentity,
+  recoveryCompleted:         (ActorContext[C], S) ⇒ Unit,
+  tagger:                    E ⇒ Set[String],
+  snapshotWhen:              (S, E, Long) ⇒ Boolean,
+  recovery:                  Recovery,
+  var holdingRecoveryPermit: Boolean,
+  settings:                  EventsourcedSettings,
+  internalStash:             StashBuffer[InternalProtocol] // FIXME would be nice here... but stash is mutable :\\\\\\\
 ) {
   import akka.actor.typed.scaladsl.adapter._
 
@@ -54,14 +53,6 @@ private[persistence] final case class EventsourcedSetup[C, E, S](
   val snapshotStore: ActorRef = persistence.snapshotStoreFor(settings.snapshotPluginId)
 
   def selfUntyped = context.self.toUntyped
-
-  import EventsourcedBehavior.InternalProtocol
-  val selfUntypedAdapted: a.ActorRef = context.messageAdapter[Any] {
-    case res: JournalProtocol.Response           ⇒ InternalProtocol.JournalResponse(res)
-    case RecoveryPermitter.RecoveryPermitGranted ⇒ InternalProtocol.RecoveryPermitGranted
-    case res: SnapshotProtocol.Response          ⇒ InternalProtocol.SnapshotterResponse(res)
-    case cmd: C @unchecked                 ⇒ InternalProtocol.IncomingCommand(cmd)
-  }.toUntyped
 
 }
 
