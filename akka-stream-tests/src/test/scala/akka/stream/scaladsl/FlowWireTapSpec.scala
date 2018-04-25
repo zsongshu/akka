@@ -12,7 +12,7 @@ import akka.stream.testkit._
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
-class FlowWireTapSpec extends StreamSpec {
+class FlowWireTapSpec extends StreamSpec("akka.stream.materializer.debug.fuzzing-mode = off") {
 
   implicit val materializer = ActorMaterializer()
   import system.dispatcher
@@ -20,14 +20,15 @@ class FlowWireTapSpec extends StreamSpec {
   "A wireTap" must {
 
     "call the procedure for each element" in assertAllStagesStopped {
-      Source(1 to 3).throttle(1, 100.millis)
+      Source(1 to 100) //.throttle(1, 100.millis)
         .wireTap(x ⇒ {
+          if (x % 10 == 0) Thread.sleep(10)
           testActor ! x
         })
         .runWith(Sink.ignore).futureValue
-      expectMsg(1)
-      expectMsg(2)
-      expectMsg(3)
+      (1 to 100).foreach { n ⇒
+        expectMsg(n)
+      }
     }
 
     "complete the future for an empty stream" in assertAllStagesStopped {

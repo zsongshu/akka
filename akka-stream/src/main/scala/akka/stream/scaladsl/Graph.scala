@@ -667,12 +667,20 @@ private[stream] final class WireTap[T] extends GraphStage[FanOutShape2[T, T, T]]
     setHandler(in, new InHandler {
       override def onPush() = {
         val elem = grab(in)
-        push(outMain, elem)
         if (isAvailable(outTap)) {
+          println(s"# push $elem, pending $pendingTap") // FIXME
+          require(pendingTap.isEmpty)
           push(outTap, elem)
         } else {
+          pendingTap match {
+            case None ⇒
+              println(s"# push into pending $elem") // FIXME
+            case Some(pending) ⇒
+              println(s"# push into pending $elem, dropping previous pending $pending") // FIXME
+          }
           pendingTap = Some(elem)
         }
+        push(outMain, elem)
       }
     })
 
@@ -691,9 +699,11 @@ private[stream] final class WireTap[T] extends GraphStage[FanOutShape2[T, T, T]]
       override def onPull() = {
         pendingTap match {
           case Some(elem) ⇒
+            println(s"# pull $elem") // FIXME
             push(outTap, elem)
             pendingTap = None
           case None ⇒ // no pending element to emit
+            println(s"# pull no pending") // FIXME
         }
       }
 
