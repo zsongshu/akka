@@ -529,9 +529,8 @@ build tool (sbt/mvn/...).
 
 In 2.4 the key of any Distributed Data map always needed to be of type String. In 2.5 you can use any type for the key. This means that
 every map (ORMap, LWWMap, PNCounterMap, ORMultiMap) now takes an extra type parameter to specify the key type. To migrate
-existing code from 2.4 to 2.5 you simple add String as key type, for example: *ORMultiMap[Foo]* becomes *ORMultiMap[String, Foo]*.
-*PNCounterMap* didn't take a type parameter in version 2.4, so *PNCounterMap* in 2.4 becomes *PNCounterMap[String]* in 2.5.
-Java developers should use *<>* instead of *[]*, e.g: *PNCounterMap<String>*.
+existing code from 2.4 to 2.5 you simple add String as key type, for example: @apidoc[ORMultiMap[Foo]] becomes @apidoc[ORMultiMap[String, Foo]].
+@apidoc[PNCounterMap] didn't take a type parameter in version 2.4, so @apidoc[PNCounterMap] in 2.4 becomes @apidoc[PNCounterMap[String]] in 2.5.
 
 **NOTE: Even though the interface is not compatible between 2.4 and 2.5, the binary protocol over the wire is (as long
 as you use String as key type). This means that 2.4 nodes can synchronize with 2.5 nodes.**
