@@ -2,12 +2,13 @@
  * Copyright (C) 2018-2019 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package jdocs.akka.persistence.typed;
+package jdocs.akka.cluster.sharding.typed;
 
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.ActorContext;
 import akka.actor.typed.javadsl.Behaviors;
+import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
 import akka.persistence.typed.ExpectingReply;
 import akka.persistence.typed.PersistenceId;
 import akka.persistence.typed.javadsl.CommandHandlerWithReply;
@@ -21,16 +22,19 @@ import java.math.BigDecimal;
 
 /**
  * Bank account example illustrating: - different state classes representing the lifecycle of the
- * account - mutable state - event handlers that delegate to methods in the state classes - command
- * handlers that delegate to methods in the EventSourcedBehavior class - replies of various types,
- * using ExpectingReply and EventSourcedBehaviorWithEnforcedReplies
+ * account - null as emptyState - event handlers that delegate to methods in the state classes -
+ * command handlers that delegate to methods in the EventSourcedBehavior class - replies of various
+ * types, using ExpectingReply and EventSourcedBehaviorWithEnforcedReplies
  */
-public interface AccountExampleWithMutableState {
+public interface AccountExampleWithNullState {
 
   // #account-entity
   public class AccountEntity
       extends EventSourcedBehaviorWithEnforcedReplies<
           AccountEntity.AccountCommand, AccountEntity.AccountEvent, AccountEntity.Account> {
+
+    public static final EntityTypeKey<AccountCommand> ENTITY_TYPE_KEY =
+        EntityTypeKey.create(AccountCommand.class, "Account");
 
     // Command
     interface AccountCommand<Reply> extends ExpectingReply<Reply> {}
@@ -155,31 +159,29 @@ public interface AccountExampleWithMutableState {
     // State
     interface Account {}
 
-    public static class EmptyAccount implements Account {
-      OpenedAccount openedAccount() {
-        return new OpenedAccount();
-      }
-    }
-
     public static class OpenedAccount implements Account {
-      private BigDecimal balance = BigDecimal.ZERO;
+      public final BigDecimal balance;
 
-      public BigDecimal getBalance() {
-        return balance;
+      public OpenedAccount() {
+        this.balance = BigDecimal.ZERO;
       }
 
-      void makeDeposit(BigDecimal amount) {
-        balance = balance.add(amount);
+      public OpenedAccount(BigDecimal balance) {
+        this.balance = balance;
+      }
+
+      OpenedAccount makeDeposit(BigDecimal amount) {
+        return new OpenedAccount(balance.add(amount));
       }
 
       boolean canWithdraw(BigDecimal amount) {
         return (balance.subtract(amount).compareTo(BigDecimal.ZERO) >= 0);
       }
 
-      void makeWithdraw(BigDecimal amount) {
+      OpenedAccount makeWithdraw(BigDecimal amount) {
         if (!canWithdraw(amount))
           throw new IllegalStateException("Account balance can't be negative");
-        balance = balance.subtract(amount);
+        return new OpenedAccount(balance.subtract(amount));
       }
 
       ClosedAccount closedAccount() {
@@ -190,16 +192,16 @@ public interface AccountExampleWithMutableState {
     public static class ClosedAccount implements Account {}
 
     public static Behavior<AccountCommand> behavior(String accountNumber) {
-      return Behaviors.setup(context -> new AccountEntity(context, accountNumber));
+      return Behaviors.setup(context -> new AccountEntity(accountNumber));
     }
 
-    public AccountEntity(ActorContext<AccountCommand> context, String accountNumber) {
+    public AccountEntity(String accountNumber) {
       super(new PersistenceId(accountNumber));
     }
 
     @Override
     public Account emptyState() {
-      return new EmptyAccount();
+      return null;
     }
 
     @Override
@@ -207,7 +209,7 @@ public interface AccountExampleWithMutableState {
       CommandHandlerWithReplyBuilder<AccountCommand, AccountEvent, Account> builder =
           newCommandHandlerWithReplyBuilder();
 
-      builder.forStateType(EmptyAccount.class).onCommand(CreateAccount.class, this::createAccount);
+      builder.forNullState().onCommand(CreateAccount.class, this::createAccount);
 
       builder
           .forStateType(OpenedAccount.class)
@@ -223,8 +225,7 @@ public interface AccountExampleWithMutableState {
       return builder.build();
     }
 
-    private ReplyEffect<AccountEvent, Account> createAccount(
-        EmptyAccount account, CreateAccount command) {
+    private ReplyEffect<AccountEvent, Account> createAccount(CreateAccount command) {
       return Effect()
           .persist(new AccountCreated())
           .thenReply(command, account2 -> Confirmed.INSTANCE);
@@ -254,7 +255,7 @@ public interface AccountExampleWithMutableState {
 
     private ReplyEffect<AccountEvent, Account> closeAccount(
         OpenedAccount account, CloseAccount command) {
-      if (account.getBalance().equals(BigDecimal.ZERO)) {
+      if (account.balance.equals(BigDecimal.ZERO)) {
         return Effect()
             .persist(new AccountClosed())
             .thenReply(command, account2 -> Confirmed.INSTANCE);
@@ -267,9 +268,7 @@ public interface AccountExampleWithMutableState {
     public EventHandler<Account, AccountEvent> eventHandler() {
       EventHandlerBuilder<Account, AccountEvent> builder = newEventHandlerBuilder();
 
-      builder
-          .forStateType(EmptyAccount.class)
-          .onEvent(AccountCreated.class, (account, event) -> account.openedAccount());
+      builder.forNullState().onEvent(AccountCreated.class, () -> new OpenedAccount());
 
       builder
           .forStateType(OpenedAccount.class)

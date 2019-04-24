@@ -2,12 +2,13 @@
  * Copyright (C) 2018-2019 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package jdocs.akka.persistence.typed;
+package jdocs.akka.cluster.sharding.typed;
 
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.ActorContext;
 import akka.actor.typed.javadsl.Behaviors;
+import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
 import akka.persistence.typed.ExpectingReply;
 import akka.persistence.typed.PersistenceId;
 import akka.persistence.typed.javadsl.CommandHandlerWithReply;
@@ -31,6 +32,9 @@ public interface AccountExampleWithCommandHandlersInState {
   public class AccountEntity
       extends EventSourcedBehaviorWithEnforcedReplies<
           AccountEntity.AccountCommand, AccountEntity.AccountEvent, AccountEntity.Account> {
+
+    public static final EntityTypeKey<AccountCommand> ENTITY_TYPE_KEY =
+        EntityTypeKey.create(AccountCommand.class, "Account");
 
     // Command
     interface AccountCommand<Reply> extends ExpectingReply<Reply> {}
@@ -227,10 +231,10 @@ public interface AccountExampleWithCommandHandlersInState {
     public static class ClosedAccount implements Account {}
 
     public static Behavior<AccountCommand> behavior(String accountNumber) {
-      return Behaviors.setup(context -> new AccountEntity(context, accountNumber));
+      return Behaviors.setup(context -> new AccountEntity(accountNumber));
     }
 
-    public AccountEntity(ActorContext<AccountCommand> context, String accountNumber) {
+    public AccountEntity(String accountNumber) {
       super(new PersistenceId(accountNumber));
     }
 

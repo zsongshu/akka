@@ -2,42 +2,42 @@
  * Copyright (C) 2018-2019 Lightbend Inc. <https://www.lightbend.com>
  */
 
-package jdocs.akka.persistence.typed;
+package jdocs.akka.cluster.sharding.typed;
 
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.ActorContext;
 import akka.actor.typed.javadsl.Behaviors;
+import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
 import akka.persistence.typed.ExpectingReply;
 import akka.persistence.typed.PersistenceId;
 import akka.persistence.typed.javadsl.CommandHandlerWithReply;
 import akka.persistence.typed.javadsl.CommandHandlerWithReplyBuilder;
-import akka.persistence.typed.javadsl.ReplyEffect;
 import akka.persistence.typed.javadsl.EventHandler;
 import akka.persistence.typed.javadsl.EventHandlerBuilder;
 import akka.persistence.typed.javadsl.EventSourcedBehaviorWithEnforcedReplies;
+import akka.persistence.typed.javadsl.ReplyEffect;
 
 import java.math.BigDecimal;
 
 /**
  * Bank account example illustrating: - different state classes representing the lifecycle of the
- * account - event handlers that delegate to methods in the state classes - command handlers that
- * delegate to methods in the EventSourcedBehavior class - replies of various types, using
- * ExpectingReply and EventSourcedBehaviorWithEnforcedReplies
+ * account - mutable state - event handlers that delegate to methods in the state classes - command
+ * handlers that delegate to methods in the EventSourcedBehavior class - replies of various types,
+ * using ExpectingReply and EventSourcedBehaviorWithEnforcedReplies
  */
-public interface AccountExampleWithEventHandlersInState {
+public interface AccountExampleWithMutableState {
 
   // #account-entity
-  // #withEnforcedReplies
   public class AccountEntity
       extends EventSourcedBehaviorWithEnforcedReplies<
           AccountEntity.AccountCommand, AccountEntity.AccountEvent, AccountEntity.Account> {
-    // #withEnforcedReplies
+
+    public static final EntityTypeKey<AccountCommand> ENTITY_TYPE_KEY =
+        EntityTypeKey.create(AccountCommand.class, "Account");
 
     // Command
-    // #reply-command
     interface AccountCommand<Reply> extends ExpectingReply<Reply> {}
-    // #reply-command
 
     public static class CreateAccount implements AccountCommand<OperationResult> {
       private final ActorRef<OperationResult> replyTo;
@@ -109,7 +109,6 @@ public interface AccountExampleWithEventHandlersInState {
     }
 
     // Reply
-    // #reply-command
     interface AccountCommandReply {}
 
     interface OperationResult extends AccountCommandReply {}
@@ -125,7 +124,6 @@ public interface AccountExampleWithEventHandlersInState {
         this.reason = reason;
       }
     }
-    // #reply-command
 
     public static class CurrentBalance implements AccountCommandReply {
       public final BigDecimal balance;
@@ -163,29 +161,29 @@ public interface AccountExampleWithEventHandlersInState {
 
     public static class EmptyAccount implements Account {
       OpenedAccount openedAccount() {
-        return new OpenedAccount(BigDecimal.ZERO);
+        return new OpenedAccount();
       }
     }
 
     public static class OpenedAccount implements Account {
-      private final BigDecimal balance;
+      private BigDecimal balance = BigDecimal.ZERO;
 
-      public OpenedAccount(BigDecimal balance) {
-        this.balance = balance;
+      public BigDecimal getBalance() {
+        return balance;
       }
 
-      OpenedAccount makeDeposit(BigDecimal amount) {
-        return new OpenedAccount(balance.add(amount));
+      void makeDeposit(BigDecimal amount) {
+        balance = balance.add(amount);
       }
 
       boolean canWithdraw(BigDecimal amount) {
         return (balance.subtract(amount).compareTo(BigDecimal.ZERO) >= 0);
       }
 
-      OpenedAccount makeWithdraw(BigDecimal amount) {
+      void makeWithdraw(BigDecimal amount) {
         if (!canWithdraw(amount))
           throw new IllegalStateException("Account balance can't be negative");
-        return new OpenedAccount(balance.subtract(amount));
+        balance = balance.subtract(amount);
       }
 
       ClosedAccount closedAccount() {
@@ -196,10 +194,10 @@ public interface AccountExampleWithEventHandlersInState {
     public static class ClosedAccount implements Account {}
 
     public static Behavior<AccountCommand> behavior(String accountNumber) {
-      return Behaviors.setup(context -> new AccountEntity(context, accountNumber));
+      return Behaviors.setup(context -> new AccountEntity(accountNumber));
     }
 
-    public AccountEntity(ActorContext<AccountCommand> context, String accountNumber) {
+    public AccountEntity(String accountNumber) {
       super(new PersistenceId(accountNumber));
     }
 
@@ -242,7 +240,6 @@ public interface AccountExampleWithEventHandlersInState {
           .thenReply(command, account2 -> Confirmed.INSTANCE);
     }
 
-    // #reply
     private ReplyEffect<AccountEvent, Account> withdraw(OpenedAccount account, Withdraw command) {
       if (!account.canWithdraw(command.amount)) {
         return Effect()
@@ -253,7 +250,6 @@ public interface AccountExampleWithEventHandlersInState {
             .thenReply(command, account2 -> Confirmed.INSTANCE);
       }
     }
-    // #reply
 
     private ReplyEffect<AccountEvent, Account> getBalance(
         OpenedAccount account, GetBalance command) {
@@ -262,7 +258,7 @@ public interface AccountExampleWithEventHandlersInState {
 
     private ReplyEffect<AccountEvent, Account> closeAccount(
         OpenedAccount account, CloseAccount command) {
-      if (account.balance.equals(BigDecimal.ZERO)) {
+      if (account.getBalance().equals(BigDecimal.ZERO)) {
         return Effect()
             .persist(new AccountClosed())
             .thenReply(command, account2 -> Confirmed.INSTANCE);
@@ -277,12 +273,22 @@ public interface AccountExampleWithEventHandlersInState {
 
       builder
           .forStateType(EmptyAccount.class)
-          .onEvent(AccountCreated.class, (account, created) -> account.openedAccount());
+          .onEvent(AccountCreated.class, (account, event) -> account.openedAccount());
 
       builder
           .forStateType(OpenedAccount.class)
-          .onEvent(Deposited.class, (account, deposited) -> account.makeDeposit(deposited.amount))
-          .onEvent(Withdrawn.class, (account, withdrawn) -> account.makeWithdraw(withdrawn.amount))
+          .onEvent(
+              Deposited.class,
+              (account, deposited) -> {
+                account.makeDeposit(deposited.amount);
+                return account;
+              })
+          .onEvent(
+              Withdrawn.class,
+              (account, withdrawn) -> {
+                account.makeWithdraw(withdrawn.amount);
+                return account;
+              })
           .onEvent(AccountClosed.class, (account, closed) -> account.closedAccount());
 
       return builder.build();
